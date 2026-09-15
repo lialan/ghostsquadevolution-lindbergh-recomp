@@ -1,0 +1,64 @@
+build/
+build-*/
+.vs/
+.vscode/
+*.obj
+*.lib
+*.exe
+*.pdb
+*.ilk
+out/
+__pycache__/
+*.pyc
+
+# The lifted game. You generate it; it is derived from Sega's binary and it
+# does not belong in a repo.
+games/ghostsquadevolution/generated/*
+!games/ghostsquadevolution/generated/.gitkeep
+
+
+# Agent scratch - never committed.
+CLAUDE.md
+.claude/
+AGENTS.md
+
+# ---- Game data. None of it belongs here, in any form. ----
+#
+# The blacklist below is deliberately wide. A Lindbergh game binary has no
+# extension at all (lgj_final, vt3_final), so extensions alone never caught it
+# and the one file this project exists to read was the one file git would have
+# taken. Disc trees go by directory name as well, because a dropped-in tree
+# brings shaders, audio banks and the ELF together.
+*_final
+disk0/
+disk1/
+*.iso
+*.img
+*.dat
+*.elf
+*.set
+*.bin
+*.afs
+*.adx
+*.aix
+*.csb
+*.xaf
+*.pvr
+*.dds
+
+# Sega's shaders, both the source on the disc and cgc's 2005 output.
+*.cg
+*.asm_gl
+
+# Shared objects lifted from a disc (libCg, libxerces-c, ...).
+*.so
+*.so.*
+
+# What a run leaves behind: frame grabs and the cabinet's battery-backed store.
+*.bmp
+lindbergh_nvram.bin
+
+# The disc's own config and launcher, if a tree is dropped in whole.
+lgjrc
+vt3rc
+gsevorc

@@ -1,0 +1,3 @@
+[submodule "lindberghrecomp"]
+	path = lindberghrecomp
+	url = https://github.com/sp00nznet/lindberghrecomp.git
