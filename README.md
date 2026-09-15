@@ -34,62 +34,57 @@ the runtime's handler has to *become* the loop and call back into lifted code.
 Three of the Lindbergh titles checked so far are GLUT-based and only two are
 not, so that seam is worth building once and is why this game is next.
 
-## Status — boots, allocates, registers its callbacks, wants a window
+## Status — boots, renders, takes a coin, dies in the I/O loop
+
+![Ghost Squad Evolution, its own resolution, one credit in](docs/credit.png)
 
 | | |
-|---|---:|
-| Functions lifted | 6,033 |
-| Instructions | 379,487 |
-| Coverage | **99.975%** |
-| Unlifted | 90, all port I/O or data read as code |
-| Builds | yes, clean, first try |
-| Reaches `main` | yes |
-| Survives its heap manager | yes |
-| Registers all 12 GLUT callbacks | yes |
-| Renders | not yet — no window, no GL context |
+|---|---|
+| Lifts | 6,033 functions, 379,487 instructions, **99.975%** |
+| Builds | clean, first try |
+| Window and GL context | yes, at the 640x480 the game asks for |
+| GLUT loop and callbacks | yes, all twelve |
+| Boot sequence | developer logo, coin, start, SEGA warning screen |
+| Input | coin, start, trigger and gun all reach the game |
+| Runs indefinitely | **no** — dies after a few hundred frames |
 
-It now runs through CRT start up, static constructors, `main`, its own heap
-manager, all twelve GLUT callback registrations, and into graphics
-initialisation, where it stops:
+It gets through CRT start up, its own heap manager, GLUT setup, and into its
+boot sequence. A coin registers (`CREDIT(S) 1`), start is accepted, and it
+reaches the SEGA warning screen. Then, several hundred frames later, the
+process disappears.
 
-```
-[gl] glGenProgramsARB unavailable on this driver
-[gl] glBindProgramARB unavailable on this driver
-[gl] glProgramStringARB unavailable on this driver
-[hle] __assert_fail
-```
+### What the failure is, and is not
 
-Those entry points are not missing from the driver. There is no GL context to
-resolve them against, because every GLUT call so far is a permissive no-op.
-The game checks, finds nothing, and asserts. **GLUT is now genuinely the next
-thing in the way**, which it was not before.
+The exit code is `0xC0000409` — a Windows fail-fast. That is raised through
+`__fastfail`, which the kernel handles directly: no vectored exception
+handler runs, no `atexit` hook runs, and nothing is printed. From the outside
+it is indistinguishable from the process being switched off.
 
-### The allocator bug, and why it took four wrong theories
+Ruled out, each by measurement rather than argument:
 
-Getting here meant finding a write to `0x0000000c` inside the game's own
-`mh_malloc_internal`. It was none of the things it looked like: not GLUT, not
-an empty heap table, not a failed allocation, not `rep stosd` clobbering the
-flags of a `test` scheduled two instructions ahead of its branch.
+| | how |
+|---|---|
+| the game calling `exit()` | bound and logged; never fires |
+| an unlifted instruction | `RECOMP_TODO` reports and exits 44; never fires |
+| a CRT invalid parameter | handler installed, and **proven to fire** on a different fault |
+| `abort()` | `_CALL_REPORTFAULT` cleared so it becomes a catchable `SIGABRT`; never fires |
+| a pure virtual call, or an exception unwinding | both bound to report; neither fires |
+| the analog report | `LINDBERGH_NO_GUN=1` pins the gun centred; no change |
+| `qsort` writing out of bounds | logged: 13 elements of 4 bytes, and bounded anyway |
+| stubbed library objects overlapping | each symbol now gets its own 256 KB; no change |
+| a different JVS packet layout to the first game | `amJvspClearPacket` is byte-identical in both |
+| a different backup wrapper argument order | identical in both |
+| stale object files after a header change | full clean rebuild; no change |
 
-glibc hands any request at or above its mmap threshold — 128 KiB by default —
-straight to mmap, so a large block always comes back page aligned. Guest code
-never asks for that and never checks it, which is exactly why it can depend on
-it without anyone noticing. This game rounds its first free block up to a
-32-byte boundary: on a page-aligned heap that is a no-op, but on the merely
-16-aligned block the runtime used to return it shifts the block by 16 bytes,
-and the split-off block then overlaps the header of the block it was split
-from. The allocator reads a `next` pointer out of memory it has just zeroed,
-and writes through the null it finds — two functions away from the cause, with
-nothing pointing back at malloc.
+What is left is host-side memory corruption: something writes over the host's
+own stack, and `/GS` notices at the next return. The dispatch ring - which is
+flushed to disc precisely because this failure leaves nothing behind - puts
+the last calls in the JVS polling loop both with and without a coin inserted,
+which is where the runtime's own code runs most often rather than necessarily
+where the fault is.
 
-What settled it was not more reading. It was taking the register dump and the
-faulting address from the crash report and evaluating every memory operand in
-the function against them. Exactly one resolved to `0xC`, and its base
-register was a pointer loaded from sixteen bytes inside a block that had just
-been zeroed. That is a minute's work and it should have been the first move.
-
-Fixed in the toolkit: allocations at or above the mmap threshold are page
-aligned, as glibc's are.
+The honest next step is a debugger. None is installed here, and every
+in-process approach has now been tried.
 
 ## Reproducing it
 
