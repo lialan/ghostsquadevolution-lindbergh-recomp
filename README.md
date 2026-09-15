@@ -34,7 +34,7 @@ the runtime's handler has to *become* the loop and call back into lifted code.
 Three of the Lindbergh titles checked so far are GLUT-based and only two are
 not, so that seam is worth building once and is why this game is next.
 
-## Status — lifts and boots, faults in the game's own allocator
+## Status — boots, allocates, registers its callbacks, wants a window
 
 | | |
 |---|---:|
@@ -44,35 +44,52 @@ not, so that seam is worth building once and is why this game is next.
 | Unlifted | 90, all port I/O or data read as code |
 | Builds | yes, clean, first try |
 | Reaches `main` | yes |
-| Renders | not yet |
+| Survives its heap manager | yes |
+| Registers all 12 GLUT callbacks | yes |
+| Renders | not yet — no window, no GL context |
 
-It gets through CRT start up, static constructors, into `main`, through nine
-GLUT calls, and into its heap manager — where it writes to `0x0000000c`.
+It now runs through CRT start up, static constructors, `main`, its own heap
+manager, all twelve GLUT callback registrations, and into graphics
+initialisation, where it stops:
 
-What that is **not**, each ruled out by measurement rather than argument:
+```
+[gl] glGenProgramsARB unavailable on this driver
+[gl] glBindProgramARB unavailable on this driver
+[gl] glProgramStringARB unavailable on this driver
+[hle] __assert_fail
+```
 
-* **Not GLUT.** The game has not reached rendering. Every GLUT call so far is a
-  permissive no-op and none of them is on this path.
-* **Not an empty heap table.** The descriptor table is static in `.rodata`,
-  five entries, and four are live. A `base` of zero there does not mean failure
-  — it means *allocate it yourself*, and the code falls through to `malloc`.
-* **Not a failed allocation.** `LINDBERGH_ALLOC=1` shows all four heaps getting
-  real memory: 256K, 640K, 256K and 27MB, every one a valid pointer.
-* **Not `rep stosd` clobbering flags.** The compiler schedules `test edx, edx`
-  two instructions ahead of the branch that uses it, so a string op that wrote
-  flags would break this and every other game. It does not; the lifted form
-  touches no flags.
+Those entry points are not missing from the driver. There is no GL context to
+resolve them against, because every GLUT call so far is a permissive no-op.
+The game checks, finds nothing, and asserts. **GLUT is now genuinely the next
+thing in the way**, which it was not before.
 
-So the fault is inside the game's own `mh_malloc_internal`, walking a structure
-`init_heap_memory` has just built, with a valid heap pointer in `ecx`.
+### The allocator bug, and why it took four wrong theories
 
-### What is in the way of finding out
+Getting here meant finding a write to `0x0000000c` inside the game's own
+`mh_malloc_internal`. It was none of the things it looked like: not GLUT, not
+an empty heap table, not a failed allocation, not `rep stosd` clobbering the
+flags of a `test` scheduled two instructions ahead of its branch.
 
-The crash report gives registers and an `ebp` backtrace but **not the faulting
-guest instruction**, which is why the four theories above were each argued from
-disassembly rather than settled in a minute. Mapping the host fault address
-back to a guest address belongs in the toolkit, and pays for itself on every
-game after this one.
+glibc hands any request at or above its mmap threshold — 128 KiB by default —
+straight to mmap, so a large block always comes back page aligned. Guest code
+never asks for that and never checks it, which is exactly why it can depend on
+it without anyone noticing. This game rounds its first free block up to a
+32-byte boundary: on a page-aligned heap that is a no-op, but on the merely
+16-aligned block the runtime used to return it shifts the block by 16 bytes,
+and the split-off block then overlaps the header of the block it was split
+from. The allocator reads a `next` pointer out of memory it has just zeroed,
+and writes through the null it finds — two functions away from the cause, with
+nothing pointing back at malloc.
+
+What settled it was not more reading. It was taking the register dump and the
+faulting address from the crash report and evaluating every memory operand in
+the function against them. Exactly one resolved to `0xC`, and its base
+register was a pointer loaded from sixteen bytes inside a block that had just
+been zeroed. That is a minute's work and it should have been the first move.
+
+Fixed in the toolkit: allocations at or above the mmap threshold are page
+aligned, as glibc's are.
 
 ## Reproducing it
 
