@@ -4,14 +4,18 @@
 statically recompiled from its x86 ELF to native C.**
 
 Built on [**lindberghrecomp**](https://github.com/sp00nznet/lindberghrecomp),
-the Sega Lindbergh recompilation toolkit, vendored here as a git submodule.
+the Sega Lindbergh recompilation toolkit, vendored here as a git submodule. It
+shares the house style of sp00nznet's other recomp projects.
 
 > **No game data here.** No ELF, no disc, no filesystem image, no keys. The
 > `.gitignore` refuses all of it — including the game binary itself, which has
 > no extension and so slipped past an extension list once already. Bring a
-> game tree you can already read; the recompiled C is output you generate.
+> game tree you can already read; the recompiled C is output you generate, and
+> it is never distributed.
 
-## Why this one
+**[Join the sp00nznet recomp Discord](https://discord.gg/CRpzGWZFcu)**
+
+### Why this one
 
 It is the cleanest target on the platform, which is not obvious until you read
 what it links against.
@@ -34,7 +38,11 @@ the runtime's handler has to *become* the loop and call back into lifted code.
 Three of the Lindbergh titles checked so far are GLUT-based and only two are
 not, so that seam is worth building once and is why this game is next.
 
-## Status — boots, renders, takes a coin, dies in the I/O loop
+## Status
+
+**Alpha, unreleased.** It boots, renders, and takes a coin, then dies in the
+I/O loop after a few hundred frames. The [changelog](CHANGELOG.md) says what
+changed, and the [roadmap](ROADMAP.md) says what is next.
 
 ![Ghost Squad Evolution, its own resolution, one credit in](docs/credit.png)
 
@@ -83,36 +91,81 @@ the last calls in the JVS polling loop both with and without a coin inserted,
 which is where the runtime's own code runs most often rather than necessarily
 where the fault is.
 
-The honest next step is a debugger. None is installed here, and every
-in-process approach has now been tried.
+The next step is a debugger. In-process approaches have all been tried.
 
-## Reproducing it
+## Getting Started
+
+There is no one-click setup yet (see the [roadmap](ROADMAP.md)). These steps
+take a clean Windows machine to the SEGA warning screen.
+
+1. **Install the prerequisites.**
+   * [Python 3.11](https://www.python.org/downloads/). Use `py -3.11`, not
+     `python`: on a fresh Windows, `python` can open the Microsoft Store instead.
+   * Visual Studio 2022 (Community is enough) with **Desktop development with
+     C++**. It includes the 32-bit MSVC toolchain and CMake 3.20 or newer.
+   * Git, and an OpenGL GPU driver.
+2. **Have a readable game tree.** The game is `disk1\vsg_l\vsg`, an ELF with no
+   extension. This project does not decrypt discs.
+3. **Clone with the toolkit and install capstone.**
+   ```powershell
+   git clone --recursive https://github.com/sp00nznet/ghostsquadevolution-lindbergh-recomp
+   cd ghostsquadevolution-lindbergh-recomp
+   py -3.11 -m pip install capstone
+   ```
+4. **Lift the game to C.** The output goes to the gitignored
+   `games\ghostsquadevolution\generated\`. Expected output:
+   ```
+   > cd lindberghrecomp
+   > py -3.11 -m tools recomp D:\gse\disk1\vsg_l\vsg ..\games\ghostsquadevolution\generated
+   [*] 6033 functions in 16 translation units, 298 imports
+   lifted 6033 functions, 298 distinct imports -> ..\games\ghostsquadevolution\generated
+   > cd ..
+   ```
+5. **Build.** See [Building from source](#building-from-source). This gives you
+   `build\Release\ghostsquadevolution.exe`.
+6. **Run it from inside the game's directory**, as the cabinet's launcher does.
+   It needs no `TEA_DIR`.
+   ```powershell
+   cd D:\gse\disk1\vsg_l
+   C:\path\to\ghostsquadevolution-lindbergh-recomp\build\Release\ghostsquadevolution.exe vsg
+   ```
+   A 640x480 window opens and shows the developer logo. `5` inserts a coin.
+
+Trip-ups:
+* **`no lifted code ... building the toolkit self-check only`** at configure
+  time means step 4 didn't write into `games\ghostsquadevolution\generated`.
+* **A CMake error about a 64-bit build** means `-A Win32` was left off.
+* **`pcrecomp submodule is missing`** means the clone wasn't recursive. Run
+  `git submodule update --init --recursive`.
+
+## Usage
+
+The cabinet is a keyboard and mouse: `5`/`6` insert a coin for player one/two,
+`1`/`2` start, `T` test, `S` service. The mouse aims the gun, left click is the
+trigger, and right click reloads.
 
 ```powershell
-git clone --recursive https://github.com/sp00nznet/ghostsquadevolution-lindbergh-recomp
-cd ghostsquadevolution-lindbergh-recomp
+# what the game asks the board for (run from lindberghrecomp\)
+py -3.11 -m tools elf D:\gse\disk1\vsg_l\vsg
 
-# what the game asks the board for
-py -3.11 -m tools elf path\to\vsg                 # run from lindberghrecomp\
+# pin the gun to the centre of the screen
+$env:LINDBERGH_NO_GUN = 1
+```
 
-# lift it
-py -3.11 -m tools recomp path\to\vsg ..\games\ghostsquadevolution\generated
+The runtime switches are documented in
+[the toolkit](https://github.com/sp00nznet/lindberghrecomp/blob/main/docs/instruments.md).
 
-# build - 32-bit, and the CMake will not let you forget
+## Building from source
+
+```powershell
 cmake -S . -B build -A Win32
 cmake --build build --config Release
 ```
 
-The cabinet's own launcher runs the game from inside its directory, with the
-OpenAL driver on the library path and no `TEA_DIR`:
-
-```powershell
-cd path\to\disk1\vsg_l
-..\..\build\Release\ghostsquadevolution.exe vsg
-```
-
-Runtime switches are documented in
-[the toolkit](https://github.com/sp00nznet/lindberghrecomp/blob/main/docs/instruments.md).
+The build has to be 32-bit, because the game maps at `0x08048000`. Without
+lifted code, the same commands build the toolkit's self-check only. That is
+what CI does on every push, since CI has no game. The full build also runs on
+netlab (`netlab check ghostsquadevolution-lindbergh-recomp`).
 
 ## Layout
 
@@ -123,10 +176,15 @@ games/ghostsquadevolution/
   generated/                        the lifted C (you generate it; gitignored)
 ```
 
-## Legal
+## License
 
 The host and the recompilation toolchain are original work, MIT-licensed.
 **No game data, no disc images, no keys, and no circumvention of anything.**
 *Ghost Squad Evolution* is © Sega; this is an independent, non-commercial
 preservation project. Built on
 [**lindberghrecomp**](https://github.com/sp00nznet/lindberghrecomp).
+
+## Contributors
+
+No outside contributions yet. To help, read
+[CONTRIBUTING.md](CONTRIBUTING.md) first.

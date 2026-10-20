@@ -1,0 +1,20 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    # CI has no game, so this configures without lifted code. The CMake then
+    # builds the toolkit's self-check against this repo's pinned submodule,
+    # which proves the pin builds. The game itself is built on netlab.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: cmake -S . -B build -A Win32
+      - run: cmake --build build --config Release
+      - run: build/lindberghrecomp/Release/lindbergh_rt_selftest.exe
