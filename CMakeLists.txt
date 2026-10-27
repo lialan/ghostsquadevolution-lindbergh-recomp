@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(ghostsquadevolution VERSION 0.1.0 LANGUAGES C)
+if(APPLE)
+    enable_language(OBJC)       # the runtime's macOS menu bar
+endif()
 
 # Ghost Squad Evolution (Sega, 2007), statically recompiled.
 #
