@@ -21,6 +21,14 @@ if(LIFTED AND EXISTS "${GEN}/recomp_imports.h")
         games/ghostsquadevolution/src/host.c
         ${LIFTED}
     )
+    if(NOT WIN32)
+        # Typed GL thunks for a 64-bit host, generated from the host's GL headers
+        # (lindberghrecomp/tools/gen_gl_thunks.py).
+        target_sources(ghostsquadevolution PRIVATE "${GEN}/recomp_gl_thunks.c")
+        # the dlopened sound libraries, lifted by lindberghrecomp/tools/recomp/solib.py
+        file(GLOB SOLIB "${GEN}/recomp_solib_*.c")
+        target_sources(ghostsquadevolution PRIVATE ${SOLIB})
+    endif()
     lindbergh_runtime(ghostsquadevolution "${GEN}")
     message(STATUS "ghostsquadevolution: building against lifted code in ${GEN}")
 else()
