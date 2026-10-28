@@ -56,6 +56,13 @@ through boot, attract and play. Coin, start, the gun, reload and the grenade
 launcher all work, and so does sound. The table and the failure below are the
 Windows build.
 
+| | |
+|---|---|
+| ![Mission select](docs/macos-mission-select.png) | ![The shooting-stance tutorial](docs/macos-tutorial.png) |
+| ![Mission 1, The Grand Villa Rescue](docs/macos-mansion.png) | ![Mission 3, The Jungle Break](docs/macos-jungle.png) |
+
+*On an M-series Mac, at the game's own 640x480.*
+
 ![Ghost Squad Evolution, its own resolution, one credit in](docs/credit.png)
 
 | | |
