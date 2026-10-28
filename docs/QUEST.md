@@ -180,7 +180,8 @@ white-scene bug here was traced to gl4es' `glIsEnabled`.
 
 `LINDBERGH_FRAMEMAP=<frame>` lists one frame's GL calls with what each draw
 had bound. `LINDBERGH_SCENE_STATS=1` reports world draws per frame, which is
-what tells menus (`LINDBERGH_MENU_DRAWS`, default 120) from the game world.
+what menu detection would go by (`LINDBERGH_MENU_DRAWS=<n>`; off by default,
+as sparse gameplay scenes tripped it and flattened the world onto the screen).
 
 On the headset itself, the game folder in the app's own storage is not
 writable over adb, but the folder above it is: put `env.txt` (and `vr.cfg`)
@@ -226,10 +227,12 @@ multiview binds; `LINDBERGH_RT_DUMP=<frame>` writes every render target
 
 - Controllers, aim and world scale are only lightly tested on hardware.
 - A zoomed view (the sniper scope, close-up cutscene shots) is drawn on the
-  virtual screen; `LINDBERGH_ZOOM_LENS` (4) is the lens it takes for one.
+  virtual screen; `LINDBERGH_ZOOM_LENS` (8, held for 6 frames) is the lens it
+  takes for one. The game's camera zooms on targets reach about 6, so a lower
+  value flattens the world during those moves.
 - World scale (`scale`) is a guess of one game unit per metre; it needs
   measuring in the headset, as the TC2 port did.
 - Each game frame is one headset frame: the game paces itself at 60 Hz, so
-  at 72–120 Hz the compositor's reprojection fills the gaps.
-- Menu detection is a draw-count threshold; a sparse moment of gameplay
-  could briefly look like a menu.
+  at the default 120 Hz each frame is shown exactly twice.
+- Menu detection is off: menu 3D models sit at their true depth rather than
+  on the screen beside the 2D panels.
