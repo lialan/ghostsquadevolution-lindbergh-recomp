@@ -64,7 +64,7 @@ This installs the APK, grants it all-files access, and copies the game (about
 | Reload | Grip, or pull the trigger while pointing off the screen (the arcade way) |
 | Action button (mission level, in-game actions) | A / X on the gun hand |
 | Fire mode | B / Y on the gun hand |
-| Laser / dot / off | Upper button (B / Y) on the other hand; saved |
+| Laser / dot / off | Hold the upper button (B / Y) on the other hand for a second; saved |
 | Start | Click either thumbstick; with automatic coins this also inserts the coin |
 | Coin | Left menu button (only needed with `coins manual`) |
 | Recentre | Hold the Meta button (the game's camera follows) |
