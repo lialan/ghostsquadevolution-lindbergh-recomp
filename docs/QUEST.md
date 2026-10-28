@@ -182,9 +182,41 @@ white-scene bug here was traced to gl4es' `glIsEnabled`.
 had bound. `LINDBERGH_SCENE_STATS=1` reports world draws per frame, which is
 what tells menus (`LINDBERGH_MENU_DRAWS`, default 120) from the game world.
 
+On the headset itself, the game folder in the app's own storage is not
+writable over adb, but the folder above it is: put `env.txt` (and `vr.cfg`)
+in `/sdcard/Android/data/org.lindbergh.gse.vr/files/` and they are read from
+there too.
+
+## Performance
+
+The game is limited by one CPU thread, not the GPU: it makes 20-30 thousand
+GL calls a frame, each translated by gl4es, and the second eye replays them.
+What helps, and is in:
+
+- **Shader programs are kept on disk** (`files/shadercache`). Building one
+  takes the Quest's driver 30-110 ms, which stalled every scene the first
+  time it drew; from the second run they load in about 1 ms. Both the
+  game's translated ARB programs (arbprog.c) and the programs gl4es builds
+  itself (`LIBGL_PROGRAM_CACHE`, set by android_main.c) are cached.
+- **Sustained high CPU clocks** through `XR_EXT_performance_settings`.
+- The second eye's recorder classifies each GL import once rather than by
+  name on every call.
+
+Measuring: `LINDBERGH_GLPROF=1` logs GL time per frame, the costliest
+imports, recording and ARB-program time, and names what any frame over
+40 ms spent its time on. The `[perf]` line splits a frame into the game's
+own work, the second eye, submitting and waiting for the headset.
+`LINDBERGH_LATENCY=1` times every program build.
+
+Busy attract scenes run at about 53-58 fps, the rest at 60. What remains is
+gl4es' per-draw work (~20 us a draw, ~180-270 draws), the second eye's
+replay (~4.5 ms) and the game's own code. Texture decompression (the
+game's DXT textures; Adreno has no S3TC) still costs about half a second
+when a scene loads.
+
 ## Known limitations
 
-- Not yet tested on Quest hardware.
+- Controllers, aim and world scale are only lightly tested on hardware.
 - World scale (`scale`) is a guess of one game unit per metre; it needs
   measuring in the headset, as the TC2 port did.
 - Each game frame is one headset frame: the game paces itself at 60 Hz, so
