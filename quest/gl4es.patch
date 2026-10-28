@@ -479,10 +479,10 @@ index b0f0299..2daf81c 100644
          if((hardext.npot==1 || hardext.npot==2) && (!tex->actual.wrap_s || !tex->actual.wrap_t || !wrap_npot(tex->actual.wrap_s) || !wrap_npot(tex->actual.wrap_t))) {
 diff --git a/src/gl/multiview.c b/src/gl/multiview.c
 new file mode 100644
-index 0000000..31bfb56
+index 0000000..8c3b4c9
 --- /dev/null
 +++ b/src/gl/multiview.c
-@@ -0,0 +1,512 @@
+@@ -0,0 +1,532 @@
 +// multiview.c - both eyes of a VR headset in one pass (see multiview.h).
 +//
 +// Shaders: what gl4es makes of every shader is GLSL ES 1.00, and multiview
@@ -568,6 +568,9 @@ index 0000000..31bfb56
 +    void (*Disable)(GLenum);
 +    const GLubyte* (*GetString)(GLenum);
 +    GLenum (*GetError)(void);
++    void* (*FenceSync)(GLenum, GLbitfield);
++    GLenum (*ClientWaitSync)(void*, GLbitfield, GLuint64);
++    void (*DeleteSync)(void*);
 +} mv;
 +static int mv_check = -1;       // LIBGL_MV_CHECK=1: report GL errors met before draws
 +
@@ -590,7 +593,7 @@ index 0000000..31bfb56
 +    L(TexStorage3D) L(FramebufferTextureMultiviewOVR) L(GetUniformBlockIndex) L(UniformBlockBinding)
 +    L(BindBufferRange) L(GenBuffers) L(BindBuffer) L(BufferData) L(BufferSubData) L(MapBufferRange) L(UnmapBuffer) L(GenTextures)
 +    L(DeleteTextures) L(BindTexture) L(ActiveTexture) L(TexParameteri) L(GetIntegerv) L(Enable) L(Disable)
-+    L(TexImage3D) L(TexSubImage3D)
++    L(TexImage3D) L(TexSubImage3D) L(FenceSync) L(ClientWaitSync) L(DeleteSync)
 +    L(GetError) L(BlitFramebuffer) L(FramebufferTexture2D) L(IsEnabled) L(GenFramebuffers) L(DeleteFramebuffers) L(BindFramebuffer) L(FramebufferTextureLayer) L(ReadPixels)
 +#undef L
 +    gl4es_mv = gl4es_mv_shaders = 1;
@@ -600,13 +603,18 @@ index 0000000..31bfb56
 +// ********* the views' matrices *********
 +// A ring of slots in one buffer. Each new set of matrices is written once,
 +// twice over - not clipping, then clipping - into the next two slots through
-+// an unsynchronised mapping (the ring is long enough that the GPU is done
-+// with a slot before it comes round again); clipping on and off then only
-+// moves the binding. Rewriting a buffer the GPU still reads with
-+// glBufferSubData made the driver copy or wait on every 2D draw.
-+#define MV_SLOTS 4096
++// an unsynchronised mapping; clipping on and off then only moves the
++// binding. Rewriting a buffer the GPU still reads with glBufferSubData made
++// the driver copy or wait on every 2D draw. The ring is cut into segments,
++// each closed with a fence when left: writing into a segment first waits on
++// its fence, so the ring can never overwrite matrices still being drawn with
++// (the game sets about 25 a frame, so in practice it never waits).
++#define MV_SLOTS 16384
++#define MV_SEGS 16
 +static GLuint mv_ubo;
 +static int mv_stride, mv_slot = -2;
++static void* mv_fence[MV_SEGS];
++static unsigned mv_waits;
 +static struct { float m[3][16]; float clip[4]; } mv_block;
 +static int mv_have, mv_clip;
 +
@@ -636,7 +644,19 @@ index 0000000..31bfb56
 +    }
 +    memcpy(mv_block.m, m, sizeof(mv_block.m));
 +    mv_have = 1;
++    int seg_len = MV_SLOTS / MV_SEGS, prev = mv_slot;
 +    mv_slot = (mv_slot + 2) % MV_SLOTS;
++    if(prev < 0 || mv_slot / seg_len != prev / seg_len) {
++        if(prev >= 0) mv_fence[prev / seg_len] = mv.FenceSync(0x9117 /*GL_SYNC_GPU_COMMANDS_COMPLETE*/, 0);
++        void** f = &mv_fence[mv_slot / seg_len];
++        if(*f) {
++            if(mv.ClientWaitSync(*f, 0, 0) == 0x911B /*GL_TIMEOUT_EXPIRED*/) {
++                mv.ClientWaitSync(*f, 0x1 /*FLUSH_COMMANDS*/, 1000000000ull);
++                if(!(mv_waits++ & 63)) fprintf(stderr, "LIBGL: multiview: matrix ring waited on the GPU (%u times)\n", mv_waits);
++            }
++            mv.DeleteSync(*f); *f = NULL;
++        }
++    }
 +    mv.BindBuffer(GL_UNIFORM_BUFFER_, mv_ubo);
 +    char* p = mv.MapBufferRange(GL_UNIFORM_BUFFER_, (GLintptr)mv_slot * mv_stride, mv_stride + sizeof(mv_block),
 +                                0x0002 /*WRITE*/ | 0x0020 /*UNSYNCHRONIZED*/ | 0x0004 /*INVALIDATE_RANGE*/);
