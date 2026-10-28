@@ -7,7 +7,8 @@ tracked controller. Branch `quest-port`.
 from attract mode through menus, cutscenes and Mission 1 gameplay at about
 60 fps, with both eyes rendered and the HUD placed correctly. It has **not yet
 been run on a physical Quest**, and the controller mapping has not been
-exercised (the emulator run had no controllers): input, world scale, comfort
+exercised with real controllers (the emulator has none; the fake gun below
+stands in): input feel, world scale, comfort
 and performance on the XR2 Gen 2 still need a headset.
 
 ## Build
@@ -43,13 +44,25 @@ This installs the APK, grants it all-files access, and copies the game (about
 
 | Action | Controller |
 | --- | --- |
-| Aim and fire | Point and pull the trigger. Either hand: pulling the other trigger moves the gun there |
+| Aim and fire | Point and pull the trigger (hold for automatic fire). Either hand: pulling the other trigger moves the gun there |
 | Reload | Grip, or pull the trigger while pointing off the screen (the arcade way) |
 | Action button (mission level, in-game actions) | A / X on the gun hand |
 | Fire mode | B / Y on the gun hand |
-| Start | Click either thumbstick |
-| Coin | Left menu button |
+| Laser / dot / off | Upper button (B / Y) on the other hand; saved |
+| Start | Click either thumbstick; with automatic coins this also inserts the coin |
+| Coin | Left menu button (only needed with `coins manual`) |
 | Recentre | Hold the Meta button (the game's camera follows) |
+
+**Coins** are automatic by default: one goes in at start-up and one with every
+press of Start, so Start alone begins or continues a game.
+
+**The gun** is a low-poly SMG drawn in your hand on the controller's aim pose,
+with its barrel on the aim ray. While you fire at the screen it kicks back,
+flashes at the muzzle and pulses the controller ten times a second.
+
+**The laser** runs from the muzzle to where the aim ray meets the game's screen,
+ending in a dot; that point is exactly where the game aims. `dot` shows only
+the dot, `off` neither.
 
 The game's sight is drawn on a screen fixed in front of you, the size of the
 arcade monitor's view; the controller's ray hits that screen exactly where the
@@ -65,6 +78,8 @@ screen 3.0       distance of the HUD screen, metres
 resolution 1440  longer side of each eye's image, pixels
 refresh 90       display rate to ask for: 72, 80, 90 or 120
 hand right       starting gun hand
+laser laser      aim aid: laser, dot or off
+coins auto       auto (a coin with every Start) or manual
 ```
 
 `env.txt` in the same folder sets runtime options, one `NAME=value` per line,
@@ -122,9 +137,20 @@ its own GL stream is re-projected per eye.
 | `tools/build.py`, `Install-Quest.ps1`, `Export-Quest-Diagnostics.ps1` | `quest/build.sh`, `quest/install.sh`, `gse.log` / `env.txt` |
 | ROMs bundled or imported | game files copied to shared storage; none ship in the APK |
 
-Not carried over yet: a weapon model in the hand, the in-headset options menu,
-physical or grip cover (Ghost Squad has no cover), laser and tracer aim aids,
-input recording and replay.
+Also following them: a weapon in the hand (here a low-poly SMG built in code,
+`xr_overlay.c`) with recoil and haptics, and a laser aim aid cycled from the
+off hand. Not carried over yet: the in-headset options panel, tracer shots,
+input recording and replay. Ghost Squad has no cover, so there is no cover
+mode.
+
+## Testing without controllers
+
+`LINDBERGH_XR_FAKE_GUN=1` (in `env.txt`) holds a gun at the right hip when no
+controller is tracked: it sweeps across the screen, fires in half-second
+bursts, and for one second in six points at the floor with the trigger held.
+With it the emulator shows the gun, laser, recoil and flash, and the game
+reloading from the off-screen trigger (the cabinet sees the reload bit, 0x20,
+and the ammunition bar refills).
 
 ## Debugging on a GL you cannot watch
 
