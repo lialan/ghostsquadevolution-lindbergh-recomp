@@ -201,6 +201,11 @@ int SDL_main(int argc, char **argv)
     }
     load_env("env.txt");
     load_env("../env.txt");     /* beside vsg_l: the one adb can write to in the app's own folder */
+    {   /* gl4es keeps the programs it builds here, as arbprog.c does its own */
+        char cache[1024];
+        snprintf(cache, sizeof cache, "%s/shadercache", base);
+        setenv("LIBGL_PROGRAM_CACHE", cache, 0);
+    }
 
     /* Every guest call is a host call: the game's main thread needs the
      * same deep stack the desktop build links with. */
