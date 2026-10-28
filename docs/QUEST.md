@@ -25,7 +25,23 @@ quest/build.sh     # -> quest/GhostSquadEvolutionVR.apk (about 8 MB, no game dat
 `DEPS`, `ANDROID_SDK_ROOT`, `ANDROID_NDK` and `JAVA_HOME` override the default
 locations.
 
-## Install
+**One APK with everything:** give the build your `vsg_l` folder and it goes
+inside the APK (about 380 MB):
+
+```sh
+quest/build.sh --with-game "/path/to/Ghost Squad Evolution/vsg_l"
+adb install -r quest/GhostSquadEvolutionVR-with-game.apk
+```
+
+On its first start the app unpacks the game into its own folder
+(`/sdcard/Android/data/org.lindbergh.gse.vr/files/vsg_l`, no permissions
+needed), then plays from there; later starts skip straight to the game, and an
+update with different files unpacks again. The game itself is native arm64
+code in `libmain.so` - nothing is emulated; the unpacked files are its data
+(models, textures, sound, movies). This APK contains the game's files: it is
+for your own headset, not for sharing.
+
+## Install (code-only APK)
 
 Enable developer mode on the headset, connect it with USB and accept
 debugging, then give the script the game's `vsg_l` folder (the one the desktop
@@ -84,7 +100,9 @@ coins auto       auto (a coin with every Start) or manual
 
 `env.txt` in the same folder sets runtime options, one `NAME=value` per line,
 for example `LINDBERGH_MUTE=1`. Logs: `adb shell cat /sdcard/GhostSquadEvolution/gse.log`
-or `adb logcat -s gse LIBGL`.
+or, for the one-APK build,
+`adb shell cat /sdcard/Android/data/org.lindbergh.gse.vr/files/gse.log`, or
+`adb logcat -s gse LIBGL`.
 
 ## How it works
 

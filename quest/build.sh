@@ -1,12 +1,17 @@
 #!/bin/sh
-# Build the Meta Quest APK: quest/GhostSquadEvolutionVR.apk
+# Build the Meta Quest APK.
 #
-#   quest/build.sh
+#   quest/build.sh                         -> quest/GhostSquadEvolutionVR.apk
+#   quest/build.sh --with-game <vsg_l>     -> quest/GhostSquadEvolutionVR-with-game.apk
+#
+# The first carries no game files (quest/install.sh copies them to the
+# headset). The second has your vsg_l folder inside and unpacks it on its
+# first start: one file to install. It holds the game's files - keep it to
+# yourself.
 #
 # Needs the lifted game in games/ghostsquadevolution/generated (see the
 # README), the Android SDK with NDK 27, a JDK 17+, and the dependencies built
-# for arm64 Android in $DEPS - see docs/QUEST.md. The APK carries no game
-# files; quest/install.sh copies them to the headset.
+# for arm64 Android in $DEPS - see docs/QUEST.md.
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 Q=$ROOT/quest
@@ -16,6 +21,11 @@ DEPS=${DEPS:-$ROOT/../deps}
 SDL_SRC=${SDL_SRC:-$DEPS/SDL2-2.32.10}
 export JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home}
 case "$(uname -s)" in Darwin) HOST=darwin-x86_64 ;; *) HOST=linux-x86_64 ;; esac
+GAME=
+if [ "$1" = --with-game ]; then
+    GAME=$2
+    [ -f "$GAME/vsg" ] || { echo "--with-game needs the vsg_l folder (with the vsg executable in it)"; exit 1; }
+fi
 STRIP=$NDK/toolchains/llvm/prebuilt/$HOST/bin/llvm-strip
 
 cmake -S "$ROOT" -B "$ROOT/build-quest" -G Ninja \
@@ -36,7 +46,27 @@ rm -rf "$Q/app/src/main/java/org/libsdl"
 cp -R "$SDL_SRC/android-project/app/src/main/java/org/libsdl" "$Q/app/src/main/java/org/"
 echo "sdk.dir=$SDK" > "$Q/local.properties"
 
+# the game, as assets - or none
+ASSETS=$Q/app/src/main/assets
+rm -rf "$ASSETS"
+OUT=$Q/GhostSquadEvolutionVR.apk
+if [ -n "$GAME" ]; then
+    mkdir -p "$ASSETS/vsg_l"
+    # not this machine's saved cabinet state, key bindings or test output,
+    # nor what Android's packager drops anyway (SourceSafe's vssver.scc and
+    # the like), so the file list matches the APK
+    rsync -a --exclude lindbergh_nvram.bin --exclude lindbergh.ini --exclude env.txt --exclude vr.cfg \
+        --exclude '*.ppm' --exclude '*.pgm' --exclude '*.log' --exclude '.*' \
+        --exclude '*.scc' --exclude '*~' --exclude thumbs.db --exclude picasa.ini --exclude CVS --exclude '_*/' \
+        "$GAME/" "$ASSETS/vsg_l/"
+    (cd "$ASSETS/vsg_l" && find . -type f | sed 's|^\./||' | sort) > "$ASSETS/vsg_l.files"
+    (cd "$ASSETS/vsg_l" && find . -type f -exec ls -ln {} + | awk '{print $5, $9}' | sort) | shasum | cut -c1-16 > "$ASSETS/vsg_l.id"
+    echo "bundling $(wc -l < "$ASSETS/vsg_l.files" | tr -d ' ') game files ($(du -sh "$ASSETS/vsg_l" | cut -f1))"
+    OUT=$Q/GhostSquadEvolutionVR-with-game.apk
+fi
+
 cd "$Q"
 ./gradlew --no-daemon -q assembleRelease
-cp app/build/outputs/apk/release/app-release.apk "$Q/GhostSquadEvolutionVR.apk"
-ls -la "$Q/GhostSquadEvolutionVR.apk"
+cp app/build/outputs/apk/release/app-release.apk "$OUT"
+rm -rf "$ASSETS"
+ls -la "$OUT"
