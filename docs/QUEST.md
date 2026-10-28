@@ -91,7 +91,7 @@ game aims. The world itself fills the headset's whole view.
 ```
 scale 1.0        game units per metre (world size)
 screen 3.0       distance of the HUD screen, metres
-resolution 1440  longer side of each eye's image, pixels
+resolution 2280  longer side of each eye's image, pixels
 refresh 120      display rate to ask for: 72, 80, 90 or 120 (120 shows each of the game's 60 frames twice, evenly)
 hand right       starting gun hand
 laser laser      aim aid: laser, dot or off
