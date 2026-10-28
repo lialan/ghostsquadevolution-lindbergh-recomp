@@ -10,6 +10,21 @@ index 142223b..90ae5b1 100644
          case GL_TEXTURE_CUBE_MAP: return glstate->enable.texture[glstate->texture.active]&(1<<ENABLED_CUBE_MAP);
          clientisenabled(GL_VERTEX_ARRAY, vertexattrib[ATT_VERTEX].enabled);
          clientisenabled(GL_NORMAL_ARRAY, vertexattrib[ATT_NORMAL].enabled);
+diff --git a/src/gl/fpe_shader.c b/src/gl/fpe_shader.c
+index dbe87a7..9bc0ec9 100644
+--- a/src/gl/fpe_shader.c
++++ b/src/gl/fpe_shader.c
+@@ -604,8 +604,8 @@ const char* const* fpe_VertexShader(shaderconv_need_t* need, fpe_state_t *state)
+         ShadAppend("vec4 tmp_tex;\n");
+     for (int i=0; i<hardext.maxtex; i++) {
+         int t = state->texture[i].textype;
+-        if(need && (need->need_texs&(1<<i)) && t==0)
+-            t = 1;
++        if(need && (need->need_texs&(1<<i)))
++            t = 1;      // as declared above: a vec4, whatever the bound texture
+         if(need && !(need->need_texs&(1<<i)))
+             t = 0;
+         int mat = state->texture[i].texmat;
 diff --git a/src/gl/texture_params.c b/src/gl/texture_params.c
 index 96e0720..0981854 100644
 --- a/src/gl/texture_params.c

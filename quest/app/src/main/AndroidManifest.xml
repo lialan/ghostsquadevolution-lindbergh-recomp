@@ -29,6 +29,8 @@
                  android:extractNativeLibs="true"
                  android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen"
                  android:hardwareAccelerated="true">
+        <!-- lets simpleperf sample the game over adb; not debuggable -->
+        <profileable android:shell="true" />
 
         <!-- Android XR (and its emulator): the system OpenXR runtime library -->
         <uses-native-library android:name="libopenxr.google.so" android:required="false" />

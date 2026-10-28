@@ -14,8 +14,8 @@
  * it is unpacked into the app's own folder, and played from there.
  *
  * Everything the runtime prints goes to logcat (tag "gse") and to gse.log
- * beside vsg_l. env.txt in vsg_l, one NAME=value per line, sets runtime
- * options (LINDBERGH_MUTE=1 and the like) without rebuilding.
+ * beside vsg_l. env.txt in vsg_l or beside it, one NAME=value per line, sets
+ * runtime options (LINDBERGH_MUTE=1 and the like) without rebuilding.
  */
 
 #include <errno.h>
@@ -61,9 +61,9 @@ static void log_to_logcat(void)
     pthread_detach(t);
 }
 
-static void load_env(void)
+static void load_env(const char *path)
 {
-    FILE *f = fopen("env.txt", "r");
+    FILE *f = fopen(path, "r");
     if (!f) return;
     char line[512];
     while (fgets(line, sizeof line, f)) {
@@ -199,7 +199,8 @@ int SDL_main(int argc, char **argv)
         fprintf(stderr, "[android] cannot enter it: %s\n", strerror(errno));
         return 1;
     }
-    load_env();
+    load_env("env.txt");
+    load_env("../env.txt");     /* beside vsg_l: the one adb can write to in the app's own folder */
 
     /* Every guest call is a host call: the game's main thread needs the
      * same deep stack the desktop build links with. */
