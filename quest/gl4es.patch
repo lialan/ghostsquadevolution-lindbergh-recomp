@@ -74,7 +74,7 @@ index 142223b..90ae5b1 100644
          clientisenabled(GL_VERTEX_ARRAY, vertexattrib[ATT_VERTEX].enabled);
          clientisenabled(GL_NORMAL_ARRAY, vertexattrib[ATT_NORMAL].enabled);
 diff --git a/src/gl/fpe.c b/src/gl/fpe.c
-index c21bcf1..b206e0e 100644
+index c21bcf1..bfbbee5 100644
 --- a/src/gl/fpe.c
 +++ b/src/gl/fpe.c
 @@ -1,8 +1,13 @@
@@ -129,7 +129,7 @@ index c21bcf1..b206e0e 100644
 +        drv = prgcache_hash(1469598103934665603ull, r?r:"", r?strlen(r):0);
 +        drv = prgcache_hash(drv, ver?ver:"", ver?strlen(ver):0);
 +        drv = prgcache_hash(drv, "gl4es fpe 1", 11);
-+        if(gl4es_mv_shaders) drv = prgcache_hash(drv, "multiview 8", 11);
++        if(gl4es_mv_shaders) drv = prgcache_hash(drv, "multiview 9", 11);
 +        if(gl4es_mv_shaders && getenv("LIBGL_MV_NOCLIP")) drv = prgcache_hash(drv, "noclip", 6);
 +    }
 +    uint64_t h = prgcache_hash(drv, v->source, strlen(v->source));
@@ -1223,7 +1223,7 @@ index e080eee..a406625 100644
  GLboolean APIENTRY_GL4ES gl4es_glIsShader(GLuint shader);
  void APIENTRY_GL4ES gl4es_glGetShaderInfoLog(GLuint shader, GLsizei maxLength, GLsizei *length, GLchar *infoLog);
 diff --git a/src/gl/shaderconv.c b/src/gl/shaderconv.c
-index 3d0f46b..b0c18a0 100644
+index 3d0f46b..427e15c 100644
 --- a/src/gl/shaderconv.c
 +++ b/src/gl/shaderconv.c
 @@ -1,4 +1,5 @@
@@ -1232,19 +1232,7 @@ index 3d0f46b..b0c18a0 100644
  
  #include <stdio.h>
  #include "../glx/hardext.h"
-@@ -489,7 +490,10 @@ char* ConvertShader(const char* pEntry, int isVertex, shaderconv_need_t *need)
- 
-   //const char* GLESUseFragHighp = "#extension GL_OES_fragment_precision_high : enable\n"; // is this needed?  
-   char GLESFullHeader[512];
--  int wanthighp = !fpeShader;
-+  // highp for the fixed-function shaders too: on Adreno mediump is real fp16,
-+  // which loses sub-texel accuracy on rectangle-texture coordinates and
-+  // range in the game's additive glow passes (blurred, over-bright images)
-+  int wanthighp = 1;
-   if(wanthighp && !hardext.highp) wanthighp = 0;
-   int versionHeader = 0;
-   #if 0
-@@ -579,7 +583,8 @@ char* ConvertShader(const char* pEntry, int isVertex, shaderconv_need_t *need)
+@@ -579,7 +580,8 @@ char* ConvertShader(const char* pEntry, int isVertex, shaderconv_need_t *need)
      Tmp = gl4es_inplace_insert(gl4es_getline(Tmp, 1), useEXTDrawBuffers, Tmp, &tmpsize);
    }
    // if some functions are used, add some int/float alternative
