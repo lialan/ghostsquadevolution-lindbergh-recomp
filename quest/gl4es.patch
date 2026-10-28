@@ -10,6 +10,38 @@ index 0ddf160..4e118f5 100644
      ${CMAKE_CURRENT_SOURCE_DIR}/gl/shader.c
      ${CMAKE_CURRENT_SOURCE_DIR}/gl/shaderconv.c
      ${CMAKE_CURRENT_SOURCE_DIR}/gl/shader_hacks.c
+diff --git a/src/gl/buffers.c b/src/gl/buffers.c
+index 4ea062c..563d8df 100644
+--- a/src/gl/buffers.c
++++ b/src/gl/buffers.c
+@@ -1,3 +1,4 @@
++#include "multiview.h"
+ #include "buffers.h"
+ 
+ #include "khash.h"
+@@ -197,11 +198,13 @@ void APIENTRY_GL4ES gl4es_glBufferData(GLenum target, GLsizeiptr size, const GLv
+         }
+         LOAD_GLES(glBufferData);
+         LOAD_GLES(glBindBuffer);
++        double bp0 = gl4es_drawprof_on ? gl4es_now_ns() : 0;
+         bindBuffer(target, buff->real_buffer);
+         gles_glBufferData(target, size, data, usage);
++        if(gl4es_drawprof_on) gl4es_drawprof[3] += gl4es_now_ns() - bp0;
+         DBG(printf(" => real VBO %d\n", buff->real_buffer);)
+     }
+-        
++    double bp1 = gl4es_drawprof_on ? gl4es_now_ns() : 0;
+     if (buff->data && buff->size<size) {
+         free(buff->data);
+         buff->data = NULL;
+@@ -214,6 +217,7 @@ void APIENTRY_GL4ES gl4es_glBufferData(GLenum target, GLsizeiptr size, const GLv
+     buff->access = GL_READ_WRITE;
+     if (data)
+         memcpy(buff->data, data, size);
++    if(gl4es_drawprof_on) { gl4es_bufprof_copy += gl4es_now_ns() - bp1; gl4es_bufprof_bytes += size; }
+     // update binded VA
+     for (int i=0; i<hardext.maxvattrib; ++i) {
+         vertexattrib_t *v = &glstate->vao->vertexattrib[i];
 diff --git a/src/gl/drawing.c b/src/gl/drawing.c
 index 498ecc5..b8910cb 100644
 --- a/src/gl/drawing.c
@@ -447,10 +479,10 @@ index b0f0299..2daf81c 100644
          if((hardext.npot==1 || hardext.npot==2) && (!tex->actual.wrap_s || !tex->actual.wrap_t || !wrap_npot(tex->actual.wrap_s) || !wrap_npot(tex->actual.wrap_t))) {
 diff --git a/src/gl/multiview.c b/src/gl/multiview.c
 new file mode 100644
-index 0000000..4699f04
+index 0000000..31bfb56
 --- /dev/null
 +++ b/src/gl/multiview.c
-@@ -0,0 +1,511 @@
+@@ -0,0 +1,512 @@
 +// multiview.c - both eyes of a VR headset in one pass (see multiview.h).
 +//
 +// Shaders: what gl4es makes of every shader is GLSL ES 1.00, and multiview
@@ -962,12 +994,13 @@ index 0000000..4699f04
 +double gl4es_drawprof[4];
 +int gl4es_drawprof_on;
 +double gl4es_now_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1e9 + t.tv_nsec; }
++double gl4es_bufprof_copy, gl4es_bufprof_bytes;
 diff --git a/src/gl/multiview.h b/src/gl/multiview.h
 new file mode 100644
-index 0000000..bfcb6db
+index 0000000..05038df
 --- /dev/null
 +++ b/src/gl/multiview.h
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,43 @@
 +#ifndef _GL4ES_MULTIVIEW_H_
 +#define _GL4ES_MULTIVIEW_H_
 +
@@ -1007,6 +1040,7 @@ index 0000000..bfcb6db
 +extern double gl4es_drawprof[4];
 +extern int gl4es_drawprof_on;
 +double gl4es_now_ns(void);
++extern double gl4es_bufprof_copy, gl4es_bufprof_bytes;
 +void  mv_upload(gltexture_t* tex, int x, int y, int w, int h, GLenum format, GLenum type, const void* pixels, int whole);
 +
 +#endif // _GL4ES_MULTIVIEW_H_
