@@ -62,3 +62,12 @@ lindbergh_nvram.bin
 lgjrc
 vt3rc
 gsevorc
+
+# Quest build (quest/build.sh)
+/build-quest/
+/quest/GhostSquadEvolutionVR.apk
+/quest/local.properties
+/quest/.gradle/
+/quest/app/build/
+/quest/app/src/main/libs/
+/quest/app/src/main/java/org/libsdl/

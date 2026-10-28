@@ -20,10 +20,23 @@ set(GEN "${CMAKE_CURRENT_SOURCE_DIR}/games/ghostsquadevolution/generated")
 
 file(GLOB LIFTED "${GEN}/recomp_funcs_*.c")
 if(LIFTED AND EXISTS "${GEN}/recomp_imports.h")
-    add_executable(ghostsquadevolution
-        games/ghostsquadevolution/src/host.c
-        ${LIFTED}
-    )
+    if(ANDROID)
+        # Meta Quest: SDL's Java side loads libmain.so and calls SDL_main
+        # (android_main.c), which runs host.c's main.
+        add_library(ghostsquadevolution SHARED
+            games/ghostsquadevolution/src/host.c
+            games/ghostsquadevolution/src/android_main.c
+            ${LIFTED}
+        )
+        set_target_properties(ghostsquadevolution PROPERTIES OUTPUT_NAME main)
+        set_source_files_properties(games/ghostsquadevolution/src/host.c
+            PROPERTIES COMPILE_DEFINITIONS main=game_main)
+    else()
+        add_executable(ghostsquadevolution
+            games/ghostsquadevolution/src/host.c
+            ${LIFTED}
+        )
+    endif()
     if(NOT WIN32)
         # Typed GL thunks for a 64-bit host, generated from the host's GL headers
         # (lindberghrecomp/tools/gen_gl_thunks.py).

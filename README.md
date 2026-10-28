@@ -44,6 +44,9 @@ not, so that seam is worth building once and is why this game is next.
 I/O loop after a few hundred frames. The [changelog](CHANGELOG.md) says what
 changed, and the [roadmap](ROADMAP.md) says what is next.
 
+**Meta Quest:** this branch (`quest-port`) adds a standalone VR build: stereo,
+controller aiming, OpenXR. See [docs/QUEST.md](docs/QUEST.md).
+
 ![Ghost Squad Evolution, its own resolution, one credit in](docs/credit.png)
 
 | | |

@@ -1,0 +1,25 @@
+diff --git a/src/gl/enable.c b/src/gl/enable.c
+index 142223b..90ae5b1 100644
+--- a/src/gl/enable.c
++++ b/src/gl/enable.c
+@@ -407,6 +407,7 @@ GLboolean APIENTRY_GL4ES gl4es_glIsEnabled(GLenum cap) {
+         case GL_TEXTURE_1D: return glstate->enable.texture[glstate->texture.active]&(1<<ENABLED_TEX1D);
+         case GL_TEXTURE_2D: return glstate->enable.texture[glstate->texture.active]&(1<<ENABLED_TEX2D);
+         case GL_TEXTURE_3D: return glstate->enable.texture[glstate->texture.active]&(1<<ENABLED_TEX3D);
++        case GL_TEXTURE_RECTANGLE_ARB: return (glstate->enable.texture[glstate->texture.active]&(1<<ENABLED_TEXTURE_RECTANGLE))?GL_TRUE:GL_FALSE;
+         case GL_TEXTURE_CUBE_MAP: return glstate->enable.texture[glstate->texture.active]&(1<<ENABLED_CUBE_MAP);
+         clientisenabled(GL_VERTEX_ARRAY, vertexattrib[ATT_VERTEX].enabled);
+         clientisenabled(GL_NORMAL_ARRAY, vertexattrib[ATT_NORMAL].enabled);
+diff --git a/src/gl/texture_params.c b/src/gl/texture_params.c
+index 96e0720..0981854 100644
+--- a/src/gl/texture_params.c
++++ b/src/gl/texture_params.c
+@@ -861,7 +861,7 @@ void realize_textures(int drawing) {
+ #endif
+     for (int i=0; i<glstate->bound_changed; i++) {
+         // get highest priority texture unit
+-        int tmp = glstate->enable.texture[glstate->texture.active];
++        int tmp = glstate->enable.texture[i];   // each unit's own targets
+         int tgt = ENABLED_TEX2D; // default to TEX2D
+         if(IS_TEX3D(tmp))
+             tgt = ENABLED_TEX3D;
