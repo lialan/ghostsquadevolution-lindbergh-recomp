@@ -189,34 +189,44 @@ there too.
 
 ## Performance
 
-The game is limited by one CPU thread, not the GPU: it makes 20-30 thousand
-GL calls a frame, each translated by gl4es, and the second eye replays them.
-What helps, and is in:
+Gameplay holds 60 fps on a Quest 3 (59.2-60 in every five-second window of
+a mission once it is running); the dips left are the loads at a mission's
+start. The game is limited by one CPU thread: it makes 15-25 thousand GL
+calls a frame, each translated by gl4es. What made it fit:
 
-- **Shader programs are kept on disk** (`files/shadercache`). Building one
-  takes the Quest's driver 30-110 ms, which stalled every scene the first
-  time it drew; from the second run they load in about 1 ms. Both the
-  game's translated ARB programs (arbprog.c) and the programs gl4es builds
-  itself (`LIBGL_PROGRAM_CACHE`, set by android_main.c) are cached.
+- **Both eyes in one pass** (`GL_OVR_multiview2`, multiview.c in
+  quest/gl4es.patch). Every shader gl4es builds is rewritten as GLSL ES 3.00
+  for two views; render targets are two-layer texture arrays; a uniform
+  block holds the per-view matrices. The second eye is no longer recorded
+  and replayed. `LINDBERGH_MULTIVIEW=0` goes back to replaying it.
+- **The view matrices are written ahead**, into a ring of slots through an
+  unsynchronised mapping. Rewriting the block with glBufferSubData made the
+  driver wait on every 2D draw (200 us each).
+- **DXT textures go to the driver as they are**: Adreno reads S3TC, and
+  decoding them on the CPU stalled every level load by half a second.
+- **gl4es copies uniforms to the program variant it draws with only when
+  they changed**, and copies an array in one call, not one per element.
+- **Shader programs are kept on disk** (`files/shadercache`): from the
+  second run a program loads in about 1 ms instead of 30-110 ms.
 - **Sustained high CPU clocks** through `XR_EXT_performance_settings`.
-- The second eye's recorder classifies each GL import once rather than by
-  name on every call.
+
+A draw now costs about 16 us: gl4es' program and uniform setup ~6 us, the
+driver's own draw ~7.5 us, textures ~1 us; the game's other GL calls about
+0.16 us each.
 
 Measuring: `LINDBERGH_GLPROF=1` logs GL time per frame, the costliest
-imports, recording and ARB-program time, and names what any frame over
-40 ms spent its time on. The `[perf]` line splits a frame into the game's
-own work, the second eye, submitting and waiting for the headset.
-`LINDBERGH_LATENCY=1` times every program build.
-
-Busy attract scenes run at about 53-58 fps, the rest at 60. What remains is
-gl4es' per-draw work (~20 us a draw, ~180-270 draws), the second eye's
-replay (~4.5 ms) and the game's own code. Texture decompression (the
-game's DXT textures; Adreno has no S3TC) still costs about half a second
-when a scene loads.
+imports, the time inside gl4es' draws, and what any frame over 40 ms spent
+its time on. The `[perf]` line splits a frame into the game's own work,
+submitting and waiting for the headset. `LINDBERGH_LATENCY=1` times every
+program build; `LIBGL_MV_CHECK=1` reports GL errors around draws and what
+multiview binds; `LINDBERGH_RT_DUMP=<frame>` writes every render target
+(the first view's layer).
 
 ## Known limitations
 
 - Controllers, aim and world scale are only lightly tested on hardware.
+- A zoomed view (the sniper scope, close-up cutscene shots) is drawn on the
+  virtual screen; `LINDBERGH_ZOOM_LENS` (4) is the lens it takes for one.
 - World scale (`scale`) is a guess of one game unit per metre; it needs
   measuring in the headset, as the TC2 port did.
 - Each game frame is one headset frame: the game paces itself at 60 Hz, so

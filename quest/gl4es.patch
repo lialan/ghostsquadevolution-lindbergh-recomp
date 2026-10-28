@@ -10,6 +10,25 @@ index 0ddf160..4e118f5 100644
      ${CMAKE_CURRENT_SOURCE_DIR}/gl/shader.c
      ${CMAKE_CURRENT_SOURCE_DIR}/gl/shaderconv.c
      ${CMAKE_CURRENT_SOURCE_DIR}/gl/shader_hacks.c
+diff --git a/src/gl/drawing.c b/src/gl/drawing.c
+index 498ecc5..b8910cb 100644
+--- a/src/gl/drawing.c
++++ b/src/gl/drawing.c
+@@ -1,3 +1,4 @@
++#include "multiview.h"
+ #include "../glx/hardext.h"
+ #include "array.h"
+ #include "enum_info.h"
+@@ -363,7 +364,9 @@ if(count>500000) return;
+     } else {
+         GLuint old_tex = glstate->texture.client;
+         
++        double dp0 = gl4es_drawprof_on ? gl4es_now_ns() : 0;
+         realize_textures(1);
++        if(gl4es_drawprof_on) gl4es_drawprof[0] += gl4es_now_ns() - dp0;
+         if(hardext.esversion==1) {
+ 
+             #define TEXTURE(A) gl4es_glClientActiveTexture(A+GL_TEXTURE0);
 diff --git a/src/gl/enable.c b/src/gl/enable.c
 index 142223b..90ae5b1 100644
 --- a/src/gl/enable.c
@@ -23,22 +42,24 @@ index 142223b..90ae5b1 100644
          clientisenabled(GL_VERTEX_ARRAY, vertexattrib[ATT_VERTEX].enabled);
          clientisenabled(GL_NORMAL_ARRAY, vertexattrib[ATT_NORMAL].enabled);
 diff --git a/src/gl/fpe.c b/src/gl/fpe.c
-index c21bcf1..1019b64 100644
+index c21bcf1..e55c8f4 100644
 --- a/src/gl/fpe.c
 +++ b/src/gl/fpe.c
-@@ -1,8 +1,11 @@
+@@ -1,8 +1,13 @@
 +#include <sys/stat.h>
 +#include <stdint.h>
++#include <string.h>
  #include "../glx/hardext.h"
  #include "array.h"
  #include "debug.h"
  #include "enum_info.h"
  #include "fpe_shader.h"
 +#include "multiview.h"
++#include "uniform.h"
  #include "glcase.h"
  #include "init.h"
  #include "loader.h"
-@@ -382,6 +385,116 @@ void APIENTRY_GL4ES fpe_oldprogram(fpe_state_t* state) {
+@@ -382,6 +387,116 @@ void APIENTRY_GL4ES fpe_oldprogram(fpe_state_t* state) {
      DBG(printf("Created program %d, with vertex=%d (old=%d) fragment=%d (old=%d), alpha=%d/%d\n", glstate->fpe->prog, glstate->fpe->vert, state->vertex_prg_id, glstate->fpe->frag, state->fragment_prg_id, state->alphatest, state->alphafunc);)
  }
  
@@ -155,7 +176,7 @@ index c21bcf1..1019b64 100644
  // ********* Shader stuffs handling *********
  void APIENTRY_GL4ES fpe_program(int ispoint) {
      glstate->fpe_state->point = ispoint;
-@@ -399,48 +512,15 @@ void APIENTRY_GL4ES fpe_program(int ispoint) {
+@@ -399,48 +514,15 @@ void APIENTRY_GL4ES fpe_program(int ispoint) {
              if(state.vertex_prg_id || state.fragment_prg_id) {
                  fpe_oldprogram(&state);
              } else {
@@ -205,7 +226,7 @@ index c21bcf1..1019b64 100644
                  fpe_AddProgramPSA(glstate->fpe->prog, &state);
              }
          }
-@@ -466,24 +546,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
+@@ -466,24 +548,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
          GLint status;
          fpe->vert = gl4es_glCreateShader(GL_VERTEX_SHADER);
          gl4es_glShaderSource(fpe->vert, 1, fpe_CustomVertexShader(glprogram->last_vert->source, state, 0), NULL);
@@ -230,7 +251,7 @@ index c21bcf1..1019b64 100644
          fpe->prog = gl4es_glCreateProgram();
          gl4es_glAttachShader(fpe->prog, fpe->vert);
          gl4es_glAttachShader(fpe->prog, fpe->frag);
-@@ -495,14 +559,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
+@@ -495,14 +561,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
                  gles_glBindAttribLocation(fpe->prog, al->index, al->name);
              );
          }
@@ -246,7 +267,7 @@ index c21bcf1..1019b64 100644
          // now find the program
          khint_t k_program;
          {
-@@ -543,24 +601,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
+@@ -543,24 +603,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
          GLint status;
          fpe->vert = gl4es_glCreateShader(GL_VERTEX_SHADER);
          gl4es_glShaderSource(fpe->vert, 1, fpe_VertexShader(glprogram->default_need, state_vertex), NULL);
@@ -271,7 +292,7 @@ index c21bcf1..1019b64 100644
          fpe->prog = gl4es_glCreateProgram();
          gl4es_glAttachShader(fpe->prog, fpe->vert);
          gl4es_glAttachShader(fpe->prog, fpe->frag);
-@@ -572,14 +614,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
+@@ -572,14 +616,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
                  gles_glBindAttribLocation(fpe->prog, al->index, al->name);
              );
          }
@@ -287,14 +308,69 @@ index c21bcf1..1019b64 100644
          // now find the program
          khint_t k_program;
          {
-@@ -629,6 +665,7 @@ void APIENTRY_GL4ES fpe_SyncUniforms(uniformcache_t *cache, program_t* glprogram
-                     GoUniformfv(glprogram, m->id, n_uniform(m->type), 1, (GLfloat*)((uintptr_t)cache->cache+m->parent_offs));
+@@ -621,14 +659,22 @@ void APIENTRY_GL4ES fpe_SyncUniforms(uniformcache_t *cache, program_t* glprogram
+     kh_foreach(uniforms, k, m,
+         if(m->parent_size) {
+             DBG(++cnt;)
++            // an array's elements are entries too, "name[1]".. after "name":
++            // its float vectors go over whole, from the first, in one call
++            int whole = (m->size>1 && !strchr(m->name, '['));
++            int count = whole ? m->parent_size/uniformsize(m->type) : 1;
++            if(count < 1) count = 1;
++            if(count > m->size) count = m->size;
+             switch(m->type) {
+                 case GL_FLOAT:
+                 case GL_FLOAT_VEC2:
+                 case GL_FLOAT_VEC3:
+                 case GL_FLOAT_VEC4:
+-                    GoUniformfv(glprogram, m->id, n_uniform(m->type), 1, (GLfloat*)((uintptr_t)cache->cache+m->parent_offs));
++                    if(strchr(m->name, '[')) break;     // went with its array's first
++                    GoUniformfv(glprogram, m->id, n_uniform(m->type), count, (GLfloat*)((uintptr_t)cache->cache+m->parent_offs));
                      break;
                  case GL_SAMPLER_2D:
 +                case 0x8DC1:    // GL_SAMPLER_2D_ARRAY (multiview.c)
                  case GL_SAMPLER_CUBE:
                  case GL_INT:
                  case GL_INT_VEC2:
+@@ -826,7 +872,9 @@ void APIENTRY_GL4ES fpe_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
+ void APIENTRY_GL4ES fpe_glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices) {
+     DBG(printf("fpe_glDrawElements(%s, %d, %s, %p), program=%d, instanceID=%u\n", PrintEnum(mode), count, PrintEnum(type), indices, glstate->glsl->program, glstate->instanceID);)
+     scratch_t scratch = {0};
++    double dp0 = gl4es_drawprof_on ? gl4es_now_ns() : 0;
+     realize_glenv(mode==GL_POINTS, 0, count, type, indices, &scratch);
++    if(gl4es_drawprof_on) gl4es_drawprof[1] += gl4es_now_ns() - dp0;
+     LOAD_GLES(glDrawElements);
+     int use_vbo = 0;
+     if(glstate->vao->elements && glstate->vao->elements->real_buffer && indices>=glstate->vao->elements->data && indices<=((void*)((char*)glstate->vao->elements->data+glstate->vao->elements->size))) {
+@@ -836,7 +884,9 @@ void APIENTRY_GL4ES fpe_glDrawElements(GLenum mode, GLsizei count, GLenum type,
+         DBG(printf("Using VBO %d for indices\n", glstate->vao->elements->real_buffer);)
+     }
+     realize_bufferIndex();
++    double dp1 = gl4es_drawprof_on ? gl4es_now_ns() : 0;
+     gles_glDrawElements(mode, count, type, indices);
++    if(gl4es_drawprof_on) gl4es_drawprof[2] += gl4es_now_ns() - dp1;
+     if(use_vbo)
+         wantBufferIndex(0);
+     free_scratch(&scratch);
+@@ -1124,9 +1174,15 @@ void realize_glenv(int ispoint, int first, int count, GLenum type, const void* i
+               DBG(printf("Use GLSL program %d\n", glstate->gleshard->program);)
+             }
+         }
+-        // synchronize uniforms with parent!
+-        if(glprogram != glstate->glsl->glprogram)
+-            fpe_SyncUniforms(&glstate->glsl->glprogram->cache, glprogram);
++        // synchronize uniforms with parent! (only when the parent's changed)
++        if(glprogram != glstate->glsl->glprogram) {
++            program_t* father = glstate->glsl->glprogram;
++            if(glprogram->synced_from != father || glprogram->synced_gen != father->cache.gen) {
++                fpe_SyncUniforms(&father->cache, glprogram);
++                glprogram->synced_from = father;
++                glprogram->synced_gen = father->cache.gen;
++            }
++        }
+     } else {
+         fpe_program(ispoint);
+         if(glstate->gleshard->program != glstate->fpe->prog)
 diff --git a/src/gl/fpe_shader.c b/src/gl/fpe_shader.c
 index dbe87a7..a9a9fd0 100644
 --- a/src/gl/fpe_shader.c
@@ -371,10 +447,10 @@ index b0f0299..2daf81c 100644
          if((hardext.npot==1 || hardext.npot==2) && (!tex->actual.wrap_s || !tex->actual.wrap_t || !wrap_npot(tex->actual.wrap_s) || !wrap_npot(tex->actual.wrap_t))) {
 diff --git a/src/gl/multiview.c b/src/gl/multiview.c
 new file mode 100644
-index 0000000..58f5f8e
+index 0000000..4699f04
 --- /dev/null
 +++ b/src/gl/multiview.c
-@@ -0,0 +1,504 @@
+@@ -0,0 +1,511 @@
 +// multiview.c - both eyes of a VR headset in one pass (see multiview.h).
 +//
 +// Shaders: what gl4es makes of every shader is GLSL ES 1.00, and multiview
@@ -396,6 +472,7 @@ index 0000000..58f5f8e
 +// (fpe_shader.c, and the runtime's ARB translation).
 +
 +#include <stdio.h>
++#include <time.h>
 +#include <stdlib.h>
 +#include <string.h>
 +#include <sys/stat.h>
@@ -879,12 +956,18 @@ index 0000000..58f5f8e
 +    mv.BindFramebuffer(GL_READ_FRAMEBUFFER, draw);
 +    mv.DeleteFramebuffers(1, &fb);
 +}
++
++// time spent per draw in gl4es' stages, for the host's profiler (ns):
++// textures, program and uniforms, the driver's draw
++double gl4es_drawprof[4];
++int gl4es_drawprof_on;
++double gl4es_now_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1e9 + t.tv_nsec; }
 diff --git a/src/gl/multiview.h b/src/gl/multiview.h
 new file mode 100644
-index 0000000..c8f9207
+index 0000000..bfcb6db
 --- /dev/null
 +++ b/src/gl/multiview.h
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,42 @@
 +#ifndef _GL4ES_MULTIVIEW_H_
 +#define _GL4ES_MULTIVIEW_H_
 +
@@ -921,6 +1004,9 @@ index 0000000..c8f9207
 +int   mv_attach(GLenum target, GLenum attachment, gltexture_t* tex, GLuint fb, GLenum textarget);
 +void  mv_framebuffer_left(GLuint fb);
 +void  mv_realize_arrays(void);
++extern double gl4es_drawprof[4];
++extern int gl4es_drawprof_on;
++double gl4es_now_ns(void);
 +void  mv_upload(gltexture_t* tex, int x, int y, int w, int h, GLenum format, GLenum type, const void* pixels, int whole);
 +
 +#endif // _GL4ES_MULTIVIEW_H_
@@ -937,7 +1023,7 @@ index 39aa58a..04897f5 100644
          DBG(printf("Error with GLSL->GLSL:ES conversion\n");)
          errorShim(GL_INVALID_OPERATION);
 diff --git a/src/gl/program.c b/src/gl/program.c
-index 2eaeb02..32387f3 100644
+index 2eaeb02..cca2947 100644
 --- a/src/gl/program.c
 +++ b/src/gl/program.c
 @@ -1,4 +1,5 @@
@@ -946,15 +1032,16 @@ index 2eaeb02..32387f3 100644
  
  #include <stdlib.h>
  #include <string.h>
-@@ -538,6 +539,7 @@ static void fill_program(program_t *glprogram)
+@@ -538,6 +539,8 @@ static void fill_program(program_t *glprogram)
      int ret;
      DBG(GLenum e2;)
  
 +    mv_program_linked(glprogram->id);
++    glprogram->synced_from = NULL;      // its uniforms are the driver's defaults again
      // init bluitin emulation first
      builtin_Init(glprogram);
      // Grab all Uniform
-@@ -581,7 +583,7 @@ static void fill_program(program_t *glprogram)
+@@ -581,7 +584,7 @@ static void fill_program(program_t *glprogram)
                          glprogram->texunits[tu_idx].type=TU_CUBE;
                          glprogram->texunits[tu_idx].req_tu = glprogram->texunits[tu_idx].act_tu = 0;
                          ++tu_idx;
@@ -963,7 +1050,7 @@ index 2eaeb02..32387f3 100644
                          glprogram->texunits[tu_idx].id = id;
                          glprogram->texunits[tu_idx].type=TU_TEX2D;
                          glprogram->texunits[tu_idx].req_tu = glprogram->texunits[tu_idx].act_tu = 0;
-@@ -608,7 +610,7 @@ static void fill_program(program_t *glprogram)
+@@ -608,7 +611,7 @@ static void fill_program(program_t *glprogram)
          uniform_t *m;
          khint_t k;
          kh_foreach(glprogram->uniform, k, m,
@@ -972,6 +1059,27 @@ index 2eaeb02..32387f3 100644
                  memset((char*)glprogram->cache.cache+m->cache_offs, 0xff, m->cache_size);
          )
      }
+diff --git a/src/gl/program.h b/src/gl/program.h
+index a788da4..38f6e9e 100644
+--- a/src/gl/program.h
++++ b/src/gl/program.h
+@@ -121,6 +121,7 @@ typedef struct {
+     void*           cache;  // buffer of the uniform size
+     int             cap;    // capacity of the cache
+     int             size;   // next available free space in the cache
++    unsigned        gen;    // bumped whenever a value in it changes
+ } uniformcache_t;
+ 
+ typedef struct {
+@@ -276,6 +277,8 @@ typedef struct {
+     GLint                           samplersCube[MAX_TEX];
+     // that will be an fpe_cache_t*
+     void*                           fpe_cache;
++    void*           synced_from;   // fpe.c: the parent program last synced from,
++    unsigned        synced_gen;    // and its cache generation then
+ } program_t;
+ 
+ KHASH_MAP_DECLARE_INT(programlist, program_t *);
 diff --git a/src/gl/shader.c b/src/gl/shader.c
 index 0bde8f1..85be2a6 100644
 --- a/src/gl/shader.c
@@ -1118,19 +1226,227 @@ index c0d479a..49d3f3a 100644
          if(bound->base_level == level && !(bound->max_level==level && level==0)) {
              int leveln = level, nw = width, nh = height, xx=xoffset, yy=yoffset;
 diff --git a/src/gl/texture.h b/src/gl/texture.h
-index 33e140a..845e53f 100644
+index 33e140a..0c0e243 100644
 --- a/src/gl/texture.h
 +++ b/src/gl/texture.h
-@@ -156,6 +156,9 @@ typedef struct {
+@@ -156,6 +156,10 @@ typedef struct {
      glsampler_t sampler;    // internal sampler if not superseded by glBindSampler
      glsampler_t actual;     // actual sampler
      float fbtex_ratio; // Lower rendering resolution
 +    GLuint mvarray;     // multiview.c: a rectangle texture's two-layer array
 +    int mv_w, mv_h;
 +    GLenum mv_min, mv_mag, mv_ws, mv_wt;    // its filters and wraps as set
++    int native_levels;  // DXT given to the driver as it is: mip levels so far
  } gltexture_t;
  
  KHASH_MAP_DECLARE_INT(tex, gltexture_t *);
+diff --git a/src/gl/texture_compressed.c b/src/gl/texture_compressed.c
+index 25d2d74..f3e806c 100644
+--- a/src/gl/texture_compressed.c
++++ b/src/gl/texture_compressed.c
+@@ -1,3 +1,6 @@
++#include <pthread.h>
++#include <time.h>
++static double tc_now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1e3 + t.tv_nsec / 1e6; }
+ #include "texture.h"
+ 
+ #include "../glx/hardext.h"
+@@ -110,6 +113,41 @@ GLenum compressedMinMipmap(GLenum param)
+     }
+ }
+ 
++typedef struct {
++    GLenum format; int width, height, blocksize, transparent0, y0, y1;
++    int simpleAlpha, complexAlpha;
++    const GLvoid* data; GLvoid* pixels;
++} dxt_job_t;
++
++static void* dxt_band(void* arg)
++{
++    dxt_job_t* j = (dxt_job_t*)arg;
++    int bw = (j->width+3)/4;
++    for (int y=j->y0; y<j->y1 && y<j->height; y+=4) {
++        uintptr_t src = (uintptr_t)j->data + (uintptr_t)(y/4)*bw*j->blocksize;
++        for (int x=0; x<j->width; x+=4) {
++            switch(j->format) {
++                case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
++                case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
++                case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:
++                case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:
++                    DecompressBlockDXT1(x, y, j->width, (uint8_t*)src, j->transparent0, &j->simpleAlpha, &j->complexAlpha, j->pixels);
++                    break;
++                case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:
++                case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:
++                    DecompressBlockDXT3(x, y, j->width, (uint8_t*)src, j->transparent0, &j->simpleAlpha, &j->complexAlpha, j->pixels);
++                    break;
++                case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
++                case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:
++                    DecompressBlockDXT5(x, y, j->width, (uint8_t*)src, j->transparent0, &j->simpleAlpha, &j->complexAlpha, j->pixels);
++                    break;
++            }
++            src += j->blocksize;
++        }
++    }
++    return NULL;
++}
++
+ GLvoid *uncompressDXTc(GLsizei width, GLsizei height, GLenum format, GLsizei imageSize, int transparent0, int* simpleAlpha, int* complexAlpha, const GLvoid *data) {
+     // uncompress a DXTc image
+     // get pixel size of uncompressed image => fixed RGBA
+@@ -139,31 +177,42 @@ GLvoid *uncompressDXTc(GLsizei width, GLsizei height, GLenum format, GLsizei ima
+             blocksize = 16;
+             break;
+     }
+-    uintptr_t src = (uintptr_t) data;
+-    for (int y=0; y<height; y+=4) {
+-        for (int x=0; x<width; x+=4) {
+-            switch(format) {
+-                case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
+-                case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
+-                case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:
+-                case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:
+-                    DecompressBlockDXT1(x, y, width, (uint8_t*)src, transparent0, simpleAlpha, complexAlpha, pixels);
+-                    break;
+-                case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:
+-                case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:
+-                    DecompressBlockDXT3(x, y, width, (uint8_t*)src, transparent0, simpleAlpha, complexAlpha, pixels);
+-                    break;
+-                case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
+-                case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:
+-                    DecompressBlockDXT5(x, y, width, (uint8_t*)src, transparent0, simpleAlpha, complexAlpha, pixels);
+-                    break;
+-            }
+-            src+=blocksize;
+-        }
++    // Large textures are decoded by several threads, a band of block rows
++    // each: a game loading a level's textures stalls a frame for every one.
++    int rows = (height+3)/4;
++    int nthreads = (width*height >= 256*256 && rows >= 8) ? 4 : 1;
++    dxt_job_t job[4];
++    pthread_t th[4];
++    for (int i=0; i<nthreads; i++) {
++        job[i].format = format; job[i].width = width; job[i].height = height; job[i].blocksize = blocksize;
++        job[i].transparent0 = transparent0; job[i].data = data; job[i].pixels = pixels;
++        job[i].y0 = (rows*i/nthreads)*4; job[i].y1 = (rows*(i+1)/nthreads)*4;
++        job[i].simpleAlpha = *simpleAlpha; job[i].complexAlpha = *complexAlpha;
++        if(i && pthread_create(&th[i], NULL, dxt_band, &job[i])) { dxt_band(&job[i]); th[i] = 0; }
++    }
++    dxt_band(&job[0]);
++    for (int i=0; i<nthreads; i++) {
++        if(i && th[i]) pthread_join(th[i], NULL);
++        *simpleAlpha |= job[i].simpleAlpha;
++        *complexAlpha |= job[i].complexAlpha;
+     }
+     return pixels;
+ }
+ 
++static int native_dxt(GLenum format)
++{
++    static int dxt = -1, srgb = 0;
++    if (dxt < 0) {
++        LOAD_GLES(glGetString);
++        const char* e = (const char*)gles_glGetString(GL_EXTENSIONS);
++        const char* v = getenv("LIBGL_NATIVE_DXT");
++        dxt = e && strstr(e, "GL_EXT_texture_compression_s3tc") && !(v && *v == '0');
++        srgb = dxt && strstr(e, "GL_EXT_texture_compression_s3tc_srgb");
++        if (dxt) printf("LIBGL: DXT textures given to the driver as they are%s\n", srgb ? " (sRGB too)" : "");
++    }
++    return dxt && (!isDXTcSRGB(format) || srgb);
++}
++
+ void APIENTRY_GL4ES gl4es_glCompressedTexImage2D(GLenum target, GLint level, GLenum internalformat,
+                             GLsizei width, GLsizei height, GLint border,
+                             GLsizei imageSize, const GLvoid *data) 
+@@ -204,6 +253,43 @@ void APIENTRY_GL4ES gl4es_glCompressedTexImage2D(GLenum target, GLint level, GLe
+     
+     GLenum format = GL_RGBA;
+     GLenum type = GL_UNSIGNED_BYTE;
++
++    // A driver that reads DXT itself (Adreno does) is given the blocks as
++    // they are: decoding them here stalled every level load.
++    if (isDXTc(internalformat) && datab && native_dxt(internalformat)) {
++        LOAD_GLES(glCompressedTexImage2D);
++        LOAD_GLES(glTexParameteri);
++        int rgb = (internalformat==GL_COMPRESSED_RGB_S3TC_DXT1_EXT || internalformat==GL_COMPRESSED_SRGB_S3TC_DXT1_EXT);
++        bound->alpha = !rgb;
++        bound->format = rgb?GL_RGB:GL_RGBA;
++        bound->type = GL_UNSIGNED_BYTE;
++        bound->wanted_internal = bound->internalformat = internalformat;
++        bound->compressed = 1;
++        if (level == 0) {
++            bound->width = bound->nwidth = width;
++            bound->height = bound->nheight = height;
++            bound->adjust = 0;
++            bound->adjustxy[0] = bound->adjustxy[1] = 1.0f;
++            bound->shrink = 0; bound->useratio = 0;
++            bound->valid = 1;
++            bound->native_levels = 0;
++        }
++        if (glstate->fpe_state) {
++            bound->fpe_format = rgb?FPE_TEX_RGB:FPE_TEX_RGBA;
++            if (glstate->fpe_bound_changed < glstate->texture.active+1)
++                glstate->fpe_bound_changed = glstate->texture.active+1;
++        }
++        gles_glCompressedTexImage2D(rtarget, level, internalformat, width, height, border, imageSize, datab);
++        errorGL();
++        // the levels given so far are the whole chain: complete with them
++        if (level+1 > bound->native_levels) {
++            bound->native_levels = level+1;
++            gles_glTexParameteri(rtarget, 0x813D /*GL_TEXTURE_MAX_LEVEL*/, level);
++            if (level) bound->mipmap_auto = 1;
++        }
++        glstate->vao->unpack = unpack;
++        return;
++    }
+         
+     if (isDXTc(internalformat)) {
+         if(level && bound->mipmap_auto==1)
+@@ -229,6 +315,7 @@ void APIENTRY_GL4ES gl4es_glCompressedTexImage2D(GLenum target, GLint level, GLe
+             }
+         }
+         int srgb = isDXTcSRGB(internalformat);
++        double tt0 = tc_now(), tt1 = tt0, tt2 = tt0;
+         int simpleAlpha = 0;
+         int complexAlpha = 0;
+         int transparent0 = (internalformat==GL_COMPRESSED_RGBA_S3TC_DXT1_EXT || internalformat==GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT)?1:0;
+@@ -248,6 +335,7 @@ void APIENTRY_GL4ES gl4es_glCompressedTexImage2D(GLenum target, GLint level, GLe
+             } else {
+                 pixels = uncompressDXTc(width, height, internalformat, imageSize, transparent0, &simpleAlpha, &complexAlpha, datab);
+             }
++            tt1 = tc_now();
+             if(srgb)
+                 pixel_srgb_inplace(pixels, width, height);
+             // automaticaly reduce the pixel size
+@@ -289,7 +377,16 @@ void APIENTRY_GL4ES gl4es_glCompressedTexImage2D(GLenum target, GLint level, GLe
+         if(level && bound && bound->valid)
+             new_intformat = (bound->format==GL_RGB)?GL_COMPRESSED_RGB:GL_COMPRESSED_RGBA;
+         DBG(printf(" => internalformat=%s (Alpha=%d/%d), %dx%d %s/%s\n\n", PrintEnum(new_intformat), simpleAlpha, complexAlpha, width, height, PrintEnum(format), PrintEnum(type));)
++        tt2 = tc_now();
+         gl4es_glTexImage2D(target, level, new_intformat, width, height, border, format, type, half);
++        {
++            static int on = -1;
++            if(on < 0) { const char* v = getenv("LIBGL_TEXTIME"); on = v && *v == '1'; }
++            double tt3 = tc_now();
++            if(on && tt3 - tt0 > 5)
++                printf("LIBGL: compressed %dx%d level %d %#x: decode %.1f ms, convert %.1f ms, upload %.1f ms\n",
++                       width, height, level, internalformat, tt1 - tt0, tt2 - tt1, tt3 - tt2);
++        }
+         // re-update bounded texture info, but not format and type
+         bound->alpha = (simpleAlpha||complexAlpha)?1:0;
+         bound->compressed = 1;
+@@ -365,6 +462,12 @@ void APIENTRY_GL4ES gl4es_glCompressedTexSubImage2D(GLenum target, GLint level,
+     int simpleAlpha = 0;
+     int complexAlpha = 0;
+     int transparent0 = (format==GL_COMPRESSED_RGBA_S3TC_DXT1_EXT || format==GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT)?1:0;
++    gltexture_t* nb = glstate->texture.bound[glstate->texture.active][itarget];
++    if (isDXTc(format) && nb && nb->native_levels) {   // the driver has it as DXT
++        gles_glCompressedTexSubImage2D(map_tex_target(target), level, xoffset, yoffset, width, height, format, imageSize, datab);
++        glstate->vao->unpack = unpack;
++        return;
++    }
+     if (isDXTc(format)) {
+         if(level) {
+             noerrorShim();
 diff --git a/src/gl/texture_params.c b/src/gl/texture_params.c
 index 96e0720..32f2415 100644
 --- a/src/gl/texture_params.c
@@ -1159,7 +1475,7 @@ index 96e0720..32f2415 100644
  
  //Direct wrapper
 diff --git a/src/gl/uniform.c b/src/gl/uniform.c
-index 98b5614..9d8b82f 100644
+index 98b5614..ad9a640 100644
 --- a/src/gl/uniform.c
 +++ b/src/gl/uniform.c
 @@ -6,6 +6,8 @@
@@ -1205,7 +1521,15 @@ index 98b5614..9d8b82f 100644
          errorShim(GL_INVALID_OPERATION);
          return;
      }
-@@ -227,7 +233,8 @@ void GoUniformiv(program_t *glprogram, GLint location, int size, int count, cons
+@@ -192,6 +198,7 @@ void GoUniformfv(program_t *glprogram, GLint location, int size, int count, cons
+     }
+     // update uniform
+     memcpy((char*)glprogram->cache.cache + m->cache_offs, value, rsize);
++    glprogram->cache.gen++;
+     LOAD_GLES2(glUniform1fv);
+     LOAD_GLES2(glUniform2fv);
+     LOAD_GLES2(glUniform3fv);
+@@ -227,7 +234,8 @@ void GoUniformiv(program_t *glprogram, GLint location, int size, int count, cons
          return;
      }
      m = kh_value(glprogram->uniform, k);
@@ -1215,7 +1539,15 @@ index 98b5614..9d8b82f 100644
          errorShim(GL_INVALID_OPERATION);
          return;
      }
-@@ -539,7 +546,8 @@ void GoUniformMatrix2fv(program_t *glprogram, GLint location, GLsizei count, GLb
+@@ -240,6 +248,7 @@ void GoUniformiv(program_t *glprogram, GLint location, int size, int count, cons
+     DBG(printf("Uniform updated, cache=%p(%d/%d), offset=%p, size=%d\n", glprogram->cache.cache, glprogram->cache.size, glprogram->cache.cap, (void*)m->cache_offs, rsize);)
+     // update uniform
+     memcpy((char*)glprogram->cache.cache + m->cache_offs, value, rsize);
++    glprogram->cache.gen++;
+     LOAD_GLES2(glUniform1iv);
+     LOAD_GLES2(glUniform2iv);
+     LOAD_GLES2(glUniform3iv);
+@@ -539,7 +548,8 @@ void GoUniformMatrix2fv(program_t *glprogram, GLint location, GLsizei count, GLb
          return;
      }
      m = kh_value(glprogram->uniform, k);
@@ -1225,7 +1557,15 @@ index 98b5614..9d8b82f 100644
          errorShim(GL_INVALID_OPERATION);
          return;
      }
-@@ -605,7 +613,8 @@ void GoUniformMatrix3fv(program_t *glprogram, GLint location, GLsizei count, GLb
+@@ -562,6 +572,7 @@ void GoUniformMatrix2fv(program_t *glprogram, GLint location, GLsizei count, GLb
+     }
+     // update uniform
+     memcpy((char*)glprogram->cache.cache + m->cache_offs, v, rsize);
++    glprogram->cache.gen++;
+     LOAD_GLES2(glUniformMatrix2fv);
+     if (gles_glUniformMatrix2fv) {
+         gles_glUniformMatrix2fv(m->id, count, GL_FALSE, v);
+@@ -605,7 +616,8 @@ void GoUniformMatrix3fv(program_t *glprogram, GLint location, GLsizei count, GLb
          return;
      }
      m = kh_value(glprogram->uniform, k);
@@ -1235,7 +1575,15 @@ index 98b5614..9d8b82f 100644
          errorShim(GL_INVALID_OPERATION);
          return;
      }
-@@ -669,7 +678,8 @@ void GoUniformMatrix4fv(program_t *glprogram, GLint location, GLsizei count, GLb
+@@ -628,6 +640,7 @@ void GoUniformMatrix3fv(program_t *glprogram, GLint location, GLsizei count, GLb
+     }
+     // update uniform
+     memcpy((char*)glprogram->cache.cache + m->cache_offs, v, rsize);
++    glprogram->cache.gen++;
+     LOAD_GLES2(glUniformMatrix3fv);
+     if (gles_glUniformMatrix3fv) {
+         gles_glUniformMatrix3fv(m->id, count, GL_FALSE, v);
+@@ -669,7 +682,8 @@ void GoUniformMatrix4fv(program_t *glprogram, GLint location, GLsizei count, GLb
          return;
      }
      m = kh_value(glprogram->uniform, k);
@@ -1245,3 +1593,11 @@ index 98b5614..9d8b82f 100644
          errorShim(GL_INVALID_OPERATION);
          return;
      }
+@@ -690,6 +704,7 @@ void GoUniformMatrix4fv(program_t *glprogram, GLint location, GLsizei count, GLb
+     }
+     // update uniform
+     memcpy((char*)glprogram->cache.cache + m->cache_offs, v, rsize);
++    glprogram->cache.gen++;
+     LOAD_GLES2(glUniformMatrix4fv);
+     if (gles_glUniformMatrix4fv) {
+         gles_glUniformMatrix4fv(m->id, count, GL_FALSE, v);
