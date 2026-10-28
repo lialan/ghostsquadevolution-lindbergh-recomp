@@ -7,6 +7,13 @@ Built on [**lindberghrecomp**](https://github.com/sp00nznet/lindberghrecomp),
 the Sega Lindbergh recompilation toolkit, vendored here as a git submodule. It
 shares the house style of sp00nznet's other recomp projects.
 
+> **This fork adds a native macOS port** (Apple Silicon): an SDL2 window,
+> OpenGL through the macOS driver, the game's own sound through OpenAL, the
+> mouse as the gun, and a menu bar for controls, aim, sound and language. To
+> build it from your own copy of the game, see
+> [Quick start (macOS)](#quick-start-macos). It is one script. Upstream is
+> [sp00nznet/ghostsquadevolution-lindbergh-recomp](https://github.com/sp00nznet/ghostsquadevolution-lindbergh-recomp).
+
 > **No game data here.** No ELF, no disc, no filesystem image, no keys. The
 > `.gitignore` refuses all of it — including the game binary itself, which has
 > no extension and so slipped past an extension list once already. Bring a
@@ -43,6 +50,11 @@ not, so that seam is worth building once and is why this game is next.
 **Alpha, unreleased.** It boots, renders, and takes a coin, then dies in the
 I/O loop after a few hundred frames. The [changelog](CHANGELOG.md) says what
 changed, and the [roadmap](ROADMAP.md) says what is next.
+
+**On macOS (this fork)** the game does not die. It runs at a steady 60 fps
+through boot, attract and play. Coin, start, the gun, reload and the grenade
+launcher all work, and so does sound. The table and the failure below are the
+Windows build.
 
 ![Ghost Squad Evolution, its own resolution, one credit in](docs/credit.png)
 
@@ -93,7 +105,73 @@ where the fault is.
 
 The next step is a debugger. In-process approaches have all been tried.
 
-## Getting Started
+## Quick start (macOS)
+
+An Apple Silicon Mac. You bring the game. This repo has none of it.
+
+1. **Install the tools.**
+   ```sh
+   xcode-select --install          # compiler and the macOS SDK, once
+   brew install cmake ninja sdl2 python@3.11
+   ```
+2. **Have your game folder ready.** That is `vsg_l/`, holding `vsg` (the ELF,
+   no extension), `snd_util.so` and `librnalindbergh_jr.so`. Pointing the
+   script at the disc root that contains `vsg_l/` or `disk1/vsg_l/` works too.
+3. **Clone, build, run.**
+   ```sh
+   git clone --recursive -b macos-port https://github.com/lialan/ghostsquadevolution-lindbergh-recomp
+   cd ghostsquadevolution-lindbergh-recomp
+   ./scripts/build-macos.sh /path/to/vsg_l     # about 30 s; makes build-mac/ghostsquadevolution
+   ./scripts/run-macos.sh   /path/to/vsg_l
+   ```
+   A 640x480 window opens on the developer logo. It starts **muted**: press `M`
+   for sound.
+
+`build-macos.sh` can be run again whenever you like. It re-lifts, keeps every
+file that came out the same, and rebuilds only what changed. The binary it
+makes is yours: it is compiled from your copy of the game, which is why none
+is published here.
+
+### What the script does
+
+The same thing by hand, from the repo root, in a venv that has
+`capstone` and `pyelftools`:
+
+```sh
+GAME=/path/to/vsg_l
+GEN=$PWD/games/ghostsquadevolution/generated
+GL=$(xcrun --show-sdk-path)/System/Library/Frameworks/OpenGL.framework/Headers
+cd lindberghrecomp
+python -m tools recomp "$GAME/vsg" "$GEN"                       # 6033 functions, 298 imports
+python -m tools.recomp.solib "$GEN" "$GAME/librnalindbergh_jr.so" "$GAME/snd_util.so"
+python tools/gen_gl_thunks.py "$GEN/recomp_imports.h" "$GL/gl.h" "$GL/glext.h" > "$GEN/recomp_gl_thunks.c"
+cd ..
+cmake -S . -B build-mac -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build-mac
+cd "$GAME" && /path/to/repo/build-mac/ghostsquadevolution vsg
+```
+
+The game dlopens its two sound libraries. `solib.py` links them ahead of time
+at fixed guest addresses and lifts them like the main ELF. Their order on that
+command line decides those addresses, so keep it as written.
+
+### macOS controls and switches
+
+The keys are the cabinet's (see [Usage](#usage)), plus:
+
+* `M` toggles sound. `LINDBERGH_MUTE=0` starts with it on.
+* `F` is the gun's fire-mode selector (the grenade launcher).
+* The menu bar has controls, aim calibration, sound and language (English by
+  default). Settings are saved to `lindbergh.ini` in the game's folder.
+
+Trip-ups:
+* **`missing: ...`**: the script names the Homebrew packages to install.
+* **`no 'vsg' in ...`**: point it at the folder that holds `vsg`, not at `vsg`
+  itself.
+* **Link errors naming `L_B4...` or `recomp_solib`**: the sound libraries were
+  not lifted. Run `build-macos.sh` again rather than lifting by hand.
+
+## Getting Started (Windows)
 
 There is no one-click setup yet (see the [roadmap](ROADMAP.md)). These steps
 take a clean Windows machine to the SEGA warning screen.
@@ -171,6 +249,8 @@ netlab (`netlab check ghostsquadevolution-lindbergh-recomp`).
 
 ```
 lindberghrecomp/                    the toolkit (git submodule)
+scripts/build-macos.sh              lift your game and build it on macOS
+scripts/run-macos.sh                start it from the game's folder
 games/ghostsquadevolution/
   src/host.c                        load the ELF, enter it, get out of the way
   generated/                        the lifted C (you generate it; gitignored)

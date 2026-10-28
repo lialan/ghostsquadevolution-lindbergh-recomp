@@ -8,6 +8,16 @@ is under Unreleased, taken from the commits.
 ## [Unreleased]
 
 ### Added
+- A native macOS (arm64) build, in this fork's `macos-port` branch. It uses an
+  SDL2 window and the system OpenGL. The game's own sound libraries are
+  lifted and play through OpenAL. The mouse is the gun, including reload and
+  the fire-mode selector, and a menu bar covers controls, aim, sound and
+  language. It starts muted. It runs at 60 fps through boot, attract and play.
+- `scripts/build-macos.sh` lifts a user's own game folder and builds it in one
+  step, and `scripts/run-macos.sh` starts it from that folder. The README has a
+  macOS quick start, and CI builds the self-check on macOS too.
+- `.gitignore` also refuses `vsg`, `vsg_l/` and disc archives (`.7z`, `.zip`,
+  `.rar`).
 - The host (`games/ghostsquadevolution/src/host.c`) and the build: lift the
   ELF, link it against lindberghrecomp, run it from the game's directory.
 - The game boots past its own heap manager and GLUT setup into its boot

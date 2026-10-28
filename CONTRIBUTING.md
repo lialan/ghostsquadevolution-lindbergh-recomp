@@ -35,5 +35,5 @@ game itself. Say in the PR where anything non-obvious came from.
 ## Checks
 
 CI builds and runs the toolkit self-check on every PR. If you have the game,
-also lift it, build it and run to the SEGA warning screen (README, Getting Started), and
+also lift it, build it and run to the SEGA warning screen (README, Getting Started (Windows), or Quick start (macOS)), and
 say in the PR that you did.

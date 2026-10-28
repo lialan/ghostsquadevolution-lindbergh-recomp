@@ -1,9 +1,9 @@
 name: ci
 on:
   push:
-    branches: [main]
+    branches: [main, macos-port]
   pull_request:
-    branches: [main]
+    branches: [main, macos-port]
 
 jobs:
   build:
@@ -18,3 +18,15 @@ jobs:
       - run: cmake -S . -B build -A Win32
       - run: cmake --build build --config Release
       - run: build/lindberghrecomp/Release/lindbergh_rt_selftest.exe
+
+  macos:
+    # The same self-check through the POSIX/SDL2 host, which needs no game.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: brew install ninja sdl2
+      - run: cmake -S . -B build-mac -G Ninja
+      - run: cmake --build build-mac
+      - run: build-mac/lindberghrecomp/lindbergh_rt_selftest

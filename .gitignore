@@ -10,6 +10,7 @@ build-*/
 out/
 __pycache__/
 *.pyc
+.venv/
 
 # The lifted game. You generate it; it is derived from Sega's binary and it
 # does not belong in a repo.
@@ -62,3 +63,11 @@ lindbergh_nvram.bin
 lgjrc
 vt3rc
 gsevorc
+
+# Ghost Squad's own binary and folder (vsg_l/vsg, no extension), and the
+# archives a disc tends to arrive in.
+vsg
+vsg_l/
+*.7z
+*.zip
+*.rar
