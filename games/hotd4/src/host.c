@@ -54,6 +54,23 @@ static void h_gun_accel(CPU *c)
     wr32(c->edx, bits);
 }
 
+/* GetSpriteResolution(&w, &h) -> screen ratio. The game lays its 2D out for
+ * two monitors only: the cabinet's 1280x768 (ratio 2) and 640x480 (every
+ * other shape, positions in 640x480 pixels). It then converts those with the
+ * sprite resolution, which for a 16:9 monitor is the monitor's own 1280x720,
+ * so the HUD came out at half size in the top-left. In a 16:9 mode the sprite
+ * resolution is 640x480, matching the layout; the runtime then draws that
+ * 4:3 layout at its own shape in the 16:9 frame (host_hud_widen). */
+static void h_sprite_res(CPU *c)
+{
+    wr32(c->eax, 640);
+    wr32(c->edx, 480);
+    c->eax = 5;                 /* 16:9 */
+}
+
+/* whether the HUD keeps to the screen's edges, or stays a centred 4:3 block */
+static int hud_anchored(void) { return 1; }
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -77,12 +94,20 @@ int main(int argc, char **argv)
      * 1280x720 mode too, but only its 3D follows it - the 2D stays laid out
      * for the cabinet - so it draws at 1280x768 and the window scales that to
      * whatever size it is. LINDBERGH_WIDTH/HEIGHT pick another of its modes. */
-    host_window_hint(1280, 768);
+    host_window_hint(1280, 720);
 
     /* Give the imports bodies. Everything the toolkit ships is bound here;
      * anything this game needs beyond that gets bound on top, and whatever is
      * still missing aborts naming itself on first call. */
     hle_register_all();
+    {
+        int w, h;
+        lindbergh_window_size(&w, &h);
+        if (w * 9 == h * 16 && guest_override("_Z19GetSpriteResolutionPjS_", h_sprite_res)) {
+            fprintf(stderr, "[hotd4] 16:9: the 2D keeps its 4:3 layout\n");
+            hud_widen_enable(0.75f, hud_anchored);
+        }
+    }
     if (guest_override("_Z14GetAdjstGunPosPhS_ttP18GunAdjustValueTypei", h_gun_pos))
         fprintf(stderr, "[hotd4] aim: the gun is where the pointer is\n");
     if (guest_override("_Z16GetAdjstGunAccelPfS_ttP23GunAccelAdjustValueType", h_gun_accel))
