@@ -63,8 +63,15 @@ static void h_gun_accel(CPU *c)
  * 4:3 layout at its own shape in the 16:9 frame (host_hud_widen). */
 static void h_sprite_res(CPU *c)
 {
-    wr32(c->eax, 640);
-    wr32(c->edx, 480);
+    /* The camera asks too, for the 3D viewport: it gets the monitor's own
+     * size, or the 3D would render at 640x480. The return address is just
+     * below the stack pointer once the override is entered. */
+    uint32_t ret = rd32(c->esp - 4);
+    int w = 640, h = 480;
+    if (ret >= 0x08210c14 && ret < 0x082127c4)     /* CCamMgr::InitAllCamera */
+        lindbergh_window_size(&w, &h);
+    wr32(c->eax, (uint32_t)w);
+    wr32(c->edx, (uint32_t)h);
     c->eax = 5;                 /* 16:9 */
 }
 
@@ -106,6 +113,9 @@ int main(int argc, char **argv)
         if (w * 9 == h * 16 && guest_override("_Z19GetSpriteResolutionPjS_", h_sprite_res)) {
             fprintf(stderr, "[hotd4] 16:9: the 2D keeps its 4:3 layout\n");
             hud_widen_enable(0.75f, hud_anchored);
+            /* the 2D is laid out in 640x480 pixels from the top left, and
+             * drawn into the camera's w x h frame */
+            hud_widen_layout(w / 640.0f, w / 640.0f - 1, h / 480.0f, 1 - h / 480.0f, w - 8);
         }
     }
     if (guest_override("_Z14GetAdjstGunPosPhS_ttP18GunAdjustValueTypei", h_gun_pos))
