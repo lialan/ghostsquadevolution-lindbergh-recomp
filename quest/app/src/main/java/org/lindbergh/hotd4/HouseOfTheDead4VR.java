@@ -89,6 +89,17 @@ public class HouseOfTheDead4VR extends SDLActivity {
         return msg;
     }
 
+    /* Called from the game (host_xr.c): the settings panel's "Reset game".
+     * Restart starts it again once this process is gone. */
+    public void restartGame() {
+        Log.i(TAG, "reset: starting the game again");
+        Intent again = new Intent(this, Restart.class);
+        again.putExtra(Restart.PID, android.os.Process.myPid());
+        again.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(again);
+        android.os.Process.killProcess(android.os.Process.myPid());
+    }
+
     private void askForFileAccess() {
         try {
             startActivity(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,

@@ -58,6 +58,8 @@ was lifted from (by SHA-256).
 | Start | Click either thumbstick; with automatic coins this also inserts the coins |
 | Laser / dot / off | Hold the upper button (B / Y) on the other hand for a second |
 | Recentre | Hold the Meta button |
+| Settings panel | Menu button on the left controller; point and pull the trigger |
+| Reset the game | *Reset game* on the settings panel, then pull again to confirm: the game starts again from its boot, as the cabinet's reset does |
 
 ## Settings
 
