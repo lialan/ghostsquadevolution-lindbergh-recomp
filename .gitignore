@@ -71,3 +71,14 @@ vsg_l/
 *.7z
 *.zip
 *.rar
+
+# Quest build (quest/build.sh)
+/build-quest/
+/quest/GhostSquadEvolutionVR.apk
+/quest/GhostSquadEvolutionVR-with-game.apk
+/quest/app/src/main/assets/
+/quest/local.properties
+/quest/.gradle/
+/quest/app/build/
+/quest/app/src/main/libs/
+/quest/app/src/main/java/org/libsdl/

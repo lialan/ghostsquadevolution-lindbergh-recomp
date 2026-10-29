@@ -1,0 +1,1686 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 0ddf160..4e118f5 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -50,6 +50,7 @@ SET(GL_SRC
+     ${CMAKE_CURRENT_SOURCE_DIR}/gl/raster.c
+     ${CMAKE_CURRENT_SOURCE_DIR}/gl/render.c
+     ${CMAKE_CURRENT_SOURCE_DIR}/gl/samplers.c
++    ${CMAKE_CURRENT_SOURCE_DIR}/gl/multiview.c
+     ${CMAKE_CURRENT_SOURCE_DIR}/gl/shader.c
+     ${CMAKE_CURRENT_SOURCE_DIR}/gl/shaderconv.c
+     ${CMAKE_CURRENT_SOURCE_DIR}/gl/shader_hacks.c
+diff --git a/src/gl/buffers.c b/src/gl/buffers.c
+index 4ea062c..563d8df 100644
+--- a/src/gl/buffers.c
++++ b/src/gl/buffers.c
+@@ -1,3 +1,4 @@
++#include "multiview.h"
+ #include "buffers.h"
+ 
+ #include "khash.h"
+@@ -197,11 +198,13 @@ void APIENTRY_GL4ES gl4es_glBufferData(GLenum target, GLsizeiptr size, const GLv
+         }
+         LOAD_GLES(glBufferData);
+         LOAD_GLES(glBindBuffer);
++        double bp0 = gl4es_drawprof_on ? gl4es_now_ns() : 0;
+         bindBuffer(target, buff->real_buffer);
+         gles_glBufferData(target, size, data, usage);
++        if(gl4es_drawprof_on) gl4es_drawprof[3] += gl4es_now_ns() - bp0;
+         DBG(printf(" => real VBO %d\n", buff->real_buffer);)
+     }
+-        
++    double bp1 = gl4es_drawprof_on ? gl4es_now_ns() : 0;
+     if (buff->data && buff->size<size) {
+         free(buff->data);
+         buff->data = NULL;
+@@ -214,6 +217,7 @@ void APIENTRY_GL4ES gl4es_glBufferData(GLenum target, GLsizeiptr size, const GLv
+     buff->access = GL_READ_WRITE;
+     if (data)
+         memcpy(buff->data, data, size);
++    if(gl4es_drawprof_on) { gl4es_bufprof_copy += gl4es_now_ns() - bp1; gl4es_bufprof_bytes += size; }
+     // update binded VA
+     for (int i=0; i<hardext.maxvattrib; ++i) {
+         vertexattrib_t *v = &glstate->vao->vertexattrib[i];
+diff --git a/src/gl/drawing.c b/src/gl/drawing.c
+index 498ecc5..b8910cb 100644
+--- a/src/gl/drawing.c
++++ b/src/gl/drawing.c
+@@ -1,3 +1,4 @@
++#include "multiview.h"
+ #include "../glx/hardext.h"
+ #include "array.h"
+ #include "enum_info.h"
+@@ -363,7 +364,9 @@ if(count>500000) return;
+     } else {
+         GLuint old_tex = glstate->texture.client;
+         
++        double dp0 = gl4es_drawprof_on ? gl4es_now_ns() : 0;
+         realize_textures(1);
++        if(gl4es_drawprof_on) gl4es_drawprof[0] += gl4es_now_ns() - dp0;
+         if(hardext.esversion==1) {
+ 
+             #define TEXTURE(A) gl4es_glClientActiveTexture(A+GL_TEXTURE0);
+diff --git a/src/gl/enable.c b/src/gl/enable.c
+index 142223b..90ae5b1 100644
+--- a/src/gl/enable.c
++++ b/src/gl/enable.c
+@@ -407,6 +407,7 @@ GLboolean APIENTRY_GL4ES gl4es_glIsEnabled(GLenum cap) {
+         case GL_TEXTURE_1D: return glstate->enable.texture[glstate->texture.active]&(1<<ENABLED_TEX1D);
+         case GL_TEXTURE_2D: return glstate->enable.texture[glstate->texture.active]&(1<<ENABLED_TEX2D);
+         case GL_TEXTURE_3D: return glstate->enable.texture[glstate->texture.active]&(1<<ENABLED_TEX3D);
++        case GL_TEXTURE_RECTANGLE_ARB: return (glstate->enable.texture[glstate->texture.active]&(1<<ENABLED_TEXTURE_RECTANGLE))?GL_TRUE:GL_FALSE;
+         case GL_TEXTURE_CUBE_MAP: return glstate->enable.texture[glstate->texture.active]&(1<<ENABLED_CUBE_MAP);
+         clientisenabled(GL_VERTEX_ARRAY, vertexattrib[ATT_VERTEX].enabled);
+         clientisenabled(GL_NORMAL_ARRAY, vertexattrib[ATT_NORMAL].enabled);
+diff --git a/src/gl/fpe.c b/src/gl/fpe.c
+index c21bcf1..d97019e 100644
+--- a/src/gl/fpe.c
++++ b/src/gl/fpe.c
+@@ -1,8 +1,13 @@
++#include <sys/stat.h>
++#include <stdint.h>
++#include <string.h>
+ #include "../glx/hardext.h"
+ #include "array.h"
+ #include "debug.h"
+ #include "enum_info.h"
+ #include "fpe_shader.h"
++#include "multiview.h"
++#include "uniform.h"
+ #include "glcase.h"
+ #include "init.h"
+ #include "loader.h"
+@@ -382,6 +387,116 @@ void APIENTRY_GL4ES fpe_oldprogram(fpe_state_t* state) {
+     DBG(printf("Created program %d, with vertex=%d (old=%d) fragment=%d (old=%d), alpha=%d/%d\n", glstate->fpe->prog, glstate->fpe->vert, state->vertex_prg_id, glstate->fpe->frag, state->fragment_prg_id, state->alphatest, state->alphafunc);)
+ }
+ 
++// ********* Programs kept on disk *********
++// LIBGL_PROGRAM_CACHE=<folder>: every program built here is saved there as a
++// driver binary, named by a hash of its two shaders' sources, its attribute
++// bindings and the driver's name and version, and loaded from there the next
++// time instead of compiled and linked (which can take a mobile driver 100 ms).
++static const char* prgcache_dir(void)
++{
++    static int inited = 0;
++    static char dir[512];
++    if(!inited) {
++        inited = 1;
++        const char* d = getenv("LIBGL_PROGRAM_CACHE");
++        if(d && *d && hardext.prgbin_n>0) { snprintf(dir, sizeof(dir), "%s", d); mkdir(dir, 0755); }
++    }
++    return dir[0]?dir:NULL;
++}
++static uint64_t prgcache_hash(uint64_t h, const char* p, size_t n)
++{
++    for(size_t i=0; i<n; i++) h = (h ^ (unsigned char)p[i]) * 1099511628211ull;
++    return (h ^ 0xff) * 1099511628211ull;
++}
++static int prgcache_path(char* out, size_t n, GLuint vert, GLuint frag, program_t* attribs)
++{
++    const char* dir = prgcache_dir();
++    shader_t *v = getShader(vert), *f = getShader(frag);
++    if(!dir || !v || !f || !v->source || !f->source) return 0;
++    static uint64_t drv = 0;
++    if(!drv) {
++        LOAD_GLES(glGetString);
++        const char* r = (const char*)gles_glGetString(GL_RENDERER);
++        const char* ver = (const char*)gles_glGetString(GL_VERSION);
++        drv = prgcache_hash(1469598103934665603ull, r?r:"", r?strlen(r):0);
++        drv = prgcache_hash(drv, ver?ver:"", ver?strlen(ver):0);
++        drv = prgcache_hash(drv, "gl4es fpe 1", 11);
++        if(gl4es_mv_shaders) drv = prgcache_hash(drv, "multiview 9", 11);
++        if(gl4es_mv_shaders && getenv("LIBGL_MV_NOCLIP")) drv = prgcache_hash(drv, "noclip", 6);
++    }
++    uint64_t h = prgcache_hash(drv, v->source, strlen(v->source));
++    h = prgcache_hash(h, f->source, strlen(f->source));
++    if(attribs && attribs->attribloc) {
++        attribloc_t *al;
++        kh_foreach_value(attribs->attribloc, al,
++            h = prgcache_hash(h, (const char*)&al->index, sizeof(al->index));
++            h = prgcache_hash(h, al->name, strlen(al->name));
++        );
++    }
++    snprintf(out, n, "%s/f%016llx.bin", dir, (unsigned long long)h);
++    return 1;
++}
++static int prgcache_load(GLuint prog, const char* path)
++{
++    FILE* fl = fopen(path, "rb");
++    if(!fl) return 0;
++    GLenum fmt = 0; long len = 0; void* data = NULL;
++    if(fread(&fmt, sizeof(fmt), 1, fl)==1 && !fseek(fl, 0, SEEK_END) && (len = ftell(fl)-(long)sizeof(fmt))>0
++       && !fseek(fl, sizeof(fmt), SEEK_SET) && (data = malloc(len)) && fread(data, 1, len, fl)!=(size_t)len) {
++        free(data); data = NULL;
++    }
++    fclose(fl);
++    if(!data) return 0;
++    int ok = gl4es_useProgramBinary(prog, len, fmt, data);
++    free(data);
++    return ok;
++}
++static void prgcache_save(GLuint prog, const char* path)
++{
++    int len = 0; GLenum fmt = 0; void* data = NULL;
++    if(!gl4es_getProgramBinary(prog, &len, &fmt, &data) || len<=0) { free(data); return; }
++    char tmp[600];
++    snprintf(tmp, sizeof(tmp), "%s.part", path);
++    FILE* fl = fopen(tmp, "wb");
++    if(fl) {
++        int ok = fwrite(&fmt, sizeof(fmt), 1, fl)==1 && fwrite(data, 1, len, fl)==(size_t)len;
++        if(fclose(fl)==0 && ok) rename(tmp, path); else remove(tmp);
++    }
++    free(data);
++}
++// Compile and link prog from its two attached shaders, whose sources are set -
++// or load it from the cache. Returns the link status; what is the program for
++// the messages.
++static int build_program(GLuint prog, GLuint vert, GLuint frag, program_t* attribs, const char* what)
++{
++    char path[600];
++    int cached = prgcache_path(path, sizeof(path), vert, frag, attribs);
++    if(cached && prgcache_load(prog, path)) return 1;
++    GLint status;
++    GLuint sh[2] = {vert, frag};
++    for(int i=0; i<2; i++) {
++        gl4es_glCompileShader(sh[i]);
++        gl4es_glGetShaderiv(sh[i], GL_COMPILE_STATUS, &status);
++        if(status!=GL_TRUE) {
++            char buff[1000];
++            gl4es_glGetShaderInfoLog(sh[i], 1000, NULL, buff);
++            printf("LIBGL: %s %s shader compile failed: %s\n", what, i?"Fragment":"Vertex", buff);
++            if(globals4es.logshader) printf("source is\n%s\n", getShader(sh[i])->source);
++            return 0;
++        }
++    }
++    gl4es_glLinkProgram(prog);
++    gl4es_glGetProgramiv(prog, GL_LINK_STATUS, &status);
++    if(status!=GL_TRUE) {
++        char buff[1000];
++        gl4es_glGetProgramInfoLog(prog, 1000, NULL, buff);
++        printf("LIBGL: %s link failed: %s\n", what, buff);
++        return 0;
++    }
++    if(cached) prgcache_save(prog, path);
++    return 1;
++}
++
+ // ********* Shader stuffs handling *********
+ void APIENTRY_GL4ES fpe_program(int ispoint) {
+     glstate->fpe_state->point = ispoint;
+@@ -399,48 +514,15 @@ void APIENTRY_GL4ES fpe_program(int ispoint) {
+             if(state.vertex_prg_id || state.fragment_prg_id) {
+                 fpe_oldprogram(&state);
+             } else {
+-                LOAD_GLES2(glGetShaderInfoLog);
+-                LOAD_GLES2(glGetProgramInfoLog);
+-                GLint status;
+                 // no old program, using regular FPE
+                 glstate->fpe->vert = gl4es_glCreateShader(GL_VERTEX_SHADER);
+                 gl4es_glShaderSource(glstate->fpe->vert, 1, fpe_VertexShader(NULL, glstate->fpe_state), NULL);
+-                gl4es_glCompileShader(glstate->fpe->vert);
+-                gl4es_glGetShaderiv(glstate->fpe->vert, GL_COMPILE_STATUS, &status);
+-                if(status!=GL_TRUE) {
+-                    char buff[1000];
+-                    gles_glGetShaderInfoLog(glstate->fpe->vert, 1000, NULL, buff);
+-                    if(globals4es.logshader)
+-                        printf("LIBGL: FPE Vertex shader compile failed: source is\n%s\n\nError is: %s\n", fpe_VertexShader(NULL, glstate->fpe_state)[0], buff);
+-                    else
+-                        printf("LIBGL: FPE Vertex shader compile failed: %s\n", buff);
+-                }
+                 glstate->fpe->frag = gl4es_glCreateShader(GL_FRAGMENT_SHADER);
+                 gl4es_glShaderSource(glstate->fpe->frag, 1, fpe_FragmentShader(NULL, glstate->fpe_state), NULL);
+-                gl4es_glCompileShader(glstate->fpe->frag);
+-                gl4es_glGetShaderiv(glstate->fpe->frag, GL_COMPILE_STATUS, &status);
+-                if(status!=GL_TRUE) {
+-                    char buff[1000];
+-                    gles_glGetShaderInfoLog(glstate->fpe->frag, 1000, NULL, buff);
+-                    if(globals4es.logshader)
+-                        printf("LIBGL: FPE Fragment shader compile failed: source is\n%s\n\nError is: %s\n", fpe_FragmentShader(NULL, glstate->fpe_state)[0], buff);
+-                    else
+-                        printf("LIBGL: FPE Fragment shader compile failed: %s\n", buff);
+-                }
+                 // program is already created
+                 gl4es_glAttachShader(glstate->fpe->prog, glstate->fpe->vert);
+                 gl4es_glAttachShader(glstate->fpe->prog, glstate->fpe->frag);
+-                gl4es_glLinkProgram(glstate->fpe->prog);
+-                gl4es_glGetProgramiv(glstate->fpe->prog, GL_LINK_STATUS, &status);
+-                if(status!=GL_TRUE) {
+-                    char buff[1000];
+-                    gles_glGetProgramInfoLog(glstate->fpe->prog, 1000, NULL, buff);
+-                    if(globals4es.logshader) {
+-                        printf("LIBGL: FPE Program link failed: source of vertex shader is\n%s\n\n", fpe_VertexShader(NULL, glstate->fpe_state)[0]);
+-                        printf("source of fragment shader is \n%s\n\nError is: %s\n", fpe_FragmentShader(NULL, glstate->fpe_state)[0], buff);
+-                    } else
+-                        printf("LIBGL: FPE Program link failed: %s\n", buff);
+-                }
++                build_program(glstate->fpe->prog, glstate->fpe->vert, glstate->fpe->frag, NULL, "FPE");
+                 fpe_AddProgramPSA(glstate->fpe->prog, &state);
+             }
+         }
+@@ -466,24 +548,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
+         GLint status;
+         fpe->vert = gl4es_glCreateShader(GL_VERTEX_SHADER);
+         gl4es_glShaderSource(fpe->vert, 1, fpe_CustomVertexShader(glprogram->last_vert->source, state, 0), NULL);
+-        gl4es_glCompileShader(fpe->vert);
+-        gl4es_glGetShaderiv(fpe->vert, GL_COMPILE_STATUS, &status);
+-        if(status!=GL_TRUE) {
+-            char buff[1000];
+-            gl4es_glGetShaderInfoLog(fpe->vert, 1000, NULL, buff);
+-            printf("LIBGL: FPE Custom Vertex shader compile failed: %s\n", buff);
+-            return glprogram;   // fallback to non-customized custom program..
+-        }
+         fpe->frag = gl4es_glCreateShader(GL_FRAGMENT_SHADER);
+         gl4es_glShaderSource(fpe->frag, 1, fpe_CustomFragmentShader(glprogram->last_frag->source, state), NULL);
+-        gl4es_glCompileShader(fpe->frag);
+-        gl4es_glGetShaderiv(fpe->frag, GL_COMPILE_STATUS, &status);
+-        if(status!=GL_TRUE) {
+-            char buff[1000];
+-            gl4es_glGetShaderInfoLog(fpe->frag, 1000, NULL, buff);
+-            printf("LIBGL: FPE Custom Fragment shader compile failed: %s\n", buff);
+-            return glprogram;   // fallback to non-customized custom program..
+-        }
+         fpe->prog = gl4es_glCreateProgram();
+         gl4es_glAttachShader(fpe->prog, fpe->vert);
+         gl4es_glAttachShader(fpe->prog, fpe->frag);
+@@ -495,14 +561,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
+                 gles_glBindAttribLocation(fpe->prog, al->index, al->name);
+             );
+         }
+-        gl4es_glLinkProgram(fpe->prog);
+-        gl4es_glGetProgramiv(fpe->prog, GL_LINK_STATUS, &status);
+-        if(status!=GL_TRUE) {
+-            char buff[1000];
+-            gl4es_glGetProgramInfoLog(fpe->prog, 1000, NULL, buff);
+-            printf("LIBGL: FPE Custom Program link failed: %s\n", buff);
++        if(!build_program(fpe->prog, fpe->vert, fpe->frag, glprogram, "FPE Custom Program"))
+             return glprogram;   // fallback to non-customized custom program..
+-        }
+         // now find the program
+         khint_t k_program;
+         {
+@@ -543,24 +603,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
+         GLint status;
+         fpe->vert = gl4es_glCreateShader(GL_VERTEX_SHADER);
+         gl4es_glShaderSource(fpe->vert, 1, fpe_VertexShader(glprogram->default_need, state_vertex), NULL);
+-        gl4es_glCompileShader(fpe->vert);
+-        gl4es_glGetShaderiv(fpe->vert, GL_COMPILE_STATUS, &status);
+-        if(status!=GL_TRUE) {
+-            char buff[1000];
+-            gl4es_glGetShaderInfoLog(fpe->vert, 1000, NULL, buff);
+-            printf("LIBGL: FPE Default Vertex shader compile failed: %s\n", buff);
+-            return glprogram;   // fallback to non-customized custom program..
+-        }
+         fpe->frag = gl4es_glCreateShader(GL_FRAGMENT_SHADER);
+         gl4es_glShaderSource(fpe->frag, 1, fpe_CustomFragmentShader(glprogram->last_frag->source, state_vertex), NULL);
+-        gl4es_glCompileShader(fpe->frag);
+-        gl4es_glGetShaderiv(fpe->frag, GL_COMPILE_STATUS, &status);
+-        if(status!=GL_TRUE) {
+-            char buff[1000];
+-            gl4es_glGetShaderInfoLog(fpe->frag, 1000, NULL, buff);
+-            printf("LIBGL: FPE Custom Fragment shader compile failed: %s\n", buff);
+-            return glprogram;   // fallback to non-customized custom program..
+-        }
+         fpe->prog = gl4es_glCreateProgram();
+         gl4es_glAttachShader(fpe->prog, fpe->vert);
+         gl4es_glAttachShader(fpe->prog, fpe->frag);
+@@ -572,14 +616,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
+                 gles_glBindAttribLocation(fpe->prog, al->index, al->name);
+             );
+         }
+-        gl4es_glLinkProgram(fpe->prog);
+-        gl4es_glGetProgramiv(fpe->prog, GL_LINK_STATUS, &status);
+-        if(status!=GL_TRUE) {
+-            char buff[1000];
+-            gl4es_glGetProgramInfoLog(fpe->prog, 1000, NULL, buff);
+-            printf("LIBGL: FPE Custom Program with Default Vertex link failed: %s\n", buff);
++        if(!build_program(fpe->prog, fpe->vert, fpe->frag, glprogram, "FPE Custom Program with Default Vertex"))
+             return glprogram;   // fallback to non-customized custom program..
+-        }
+         // now find the program
+         khint_t k_program;
+         {
+@@ -621,14 +659,23 @@ void APIENTRY_GL4ES fpe_SyncUniforms(uniformcache_t *cache, program_t* glprogram
+     kh_foreach(uniforms, k, m,
+         if(m->parent_size) {
+             DBG(++cnt;)
++            // an array's elements are entries too, "name[1]".. after "name":
++            // its float vectors go over whole, from the first, in one call
++            if(!m->elem) m->elem = strchr(m->name, '[') ? 2 : 1;    // once: this runs every draw
++            int whole = (m->size>1 && m->elem==1);
++            int count = whole ? m->parent_size/uniformsize(m->type) : 1;
++            if(count < 1) count = 1;
++            if(count > m->size) count = m->size;
+             switch(m->type) {
+                 case GL_FLOAT:
+                 case GL_FLOAT_VEC2:
+                 case GL_FLOAT_VEC3:
+                 case GL_FLOAT_VEC4:
+-                    GoUniformfv(glprogram, m->id, n_uniform(m->type), 1, (GLfloat*)((uintptr_t)cache->cache+m->parent_offs));
++                    if(m->elem==2) break;     // went with its array's first
++                    GoUniformfv(glprogram, m->id, n_uniform(m->type), count, (GLfloat*)((uintptr_t)cache->cache+m->parent_offs));
+                     break;
+                 case GL_SAMPLER_2D:
++                case 0x8DC1:    // GL_SAMPLER_2D_ARRAY (multiview.c)
+                 case GL_SAMPLER_CUBE:
+                 case GL_INT:
+                 case GL_INT_VEC2:
+@@ -826,7 +873,9 @@ void APIENTRY_GL4ES fpe_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
+ void APIENTRY_GL4ES fpe_glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices) {
+     DBG(printf("fpe_glDrawElements(%s, %d, %s, %p), program=%d, instanceID=%u\n", PrintEnum(mode), count, PrintEnum(type), indices, glstate->glsl->program, glstate->instanceID);)
+     scratch_t scratch = {0};
++    double dp0 = gl4es_drawprof_on ? gl4es_now_ns() : 0;
+     realize_glenv(mode==GL_POINTS, 0, count, type, indices, &scratch);
++    if(gl4es_drawprof_on) gl4es_drawprof[1] += gl4es_now_ns() - dp0;
+     LOAD_GLES(glDrawElements);
+     int use_vbo = 0;
+     if(glstate->vao->elements && glstate->vao->elements->real_buffer && indices>=glstate->vao->elements->data && indices<=((void*)((char*)glstate->vao->elements->data+glstate->vao->elements->size))) {
+@@ -836,7 +885,9 @@ void APIENTRY_GL4ES fpe_glDrawElements(GLenum mode, GLsizei count, GLenum type,
+         DBG(printf("Using VBO %d for indices\n", glstate->vao->elements->real_buffer);)
+     }
+     realize_bufferIndex();
++    double dp1 = gl4es_drawprof_on ? gl4es_now_ns() : 0;
+     gles_glDrawElements(mode, count, type, indices);
++    if(gl4es_drawprof_on) gl4es_drawprof[2] += gl4es_now_ns() - dp1;
+     if(use_vbo)
+         wantBufferIndex(0);
+     free_scratch(&scratch);
+@@ -1124,9 +1175,15 @@ void realize_glenv(int ispoint, int first, int count, GLenum type, const void* i
+               DBG(printf("Use GLSL program %d\n", glstate->gleshard->program);)
+             }
+         }
+-        // synchronize uniforms with parent!
+-        if(glprogram != glstate->glsl->glprogram)
+-            fpe_SyncUniforms(&glstate->glsl->glprogram->cache, glprogram);
++        // synchronize uniforms with parent! (only when the parent's changed)
++        if(glprogram != glstate->glsl->glprogram) {
++            program_t* father = glstate->glsl->glprogram;
++            if(glprogram->synced_from != father || glprogram->synced_gen != father->cache.gen) {
++                fpe_SyncUniforms(&father->cache, glprogram);
++                glprogram->synced_from = father;
++                glprogram->synced_gen = father->cache.gen;
++            }
++        }
+     } else {
+         fpe_program(ispoint);
+         if(glstate->gleshard->program != glstate->fpe->prog)
+diff --git a/src/gl/fpe_shader.c b/src/gl/fpe_shader.c
+index dbe87a7..a9a9fd0 100644
+--- a/src/gl/fpe_shader.c
++++ b/src/gl/fpe_shader.c
+@@ -1,4 +1,5 @@
+ #include "fpe_shader.h"
++#include "multiview.h"
+ 
+ #include <stdio.h>
+ 
+@@ -604,8 +605,8 @@ const char* const* fpe_VertexShader(shaderconv_need_t* need, fpe_state_t *state)
+         ShadAppend("vec4 tmp_tex;\n");
+     for (int i=0; i<hardext.maxtex; i++) {
+         int t = state->texture[i].textype;
+-        if(need && (need->need_texs&(1<<i)) && t==0)
+-            t = 1;
++        if(need && (need->need_texs&(1<<i)))
++            t = 1;      // as declared above: a vec4, whatever the bound texture
+         if(need && !(need->need_texs&(1<<i)))
+             t = 0;
+         int mat = state->texture[i].texmat;
+@@ -918,7 +919,7 @@ const char* const* fpe_FragmentShader(shaderconv_need_t* need, fpe_state_t *stat
+         if(t) {
+             sprintf(buff, "varying highp %s _gl4es_TexCoord_%d;\n", texvecsize[t-1], i);
+             ShadAppend(buff);
+-            sprintf(buff, "uniform %s _gl4es_TexSampler_%d;\n", texsampler[t-1], i);
++            sprintf(buff, "uniform %s _gl4es_TexSampler_%d;\n", (gl4es_mv_shaders && t==FPE_TEX_RECT)?"sampler2DArray":texsampler[t-1], i);
+             ShadAppend(buff);
+             headers++;
+ 
+@@ -992,7 +993,9 @@ const char* const* fpe_FragmentShader(shaderconv_need_t* need, fpe_state_t *stat
+                         sprintf(buff, "vec4 texColor%d = %s(_gl4es_TexSampler_%d, vec2(gl_PointCoord.x, 1.-gl_PointCoord.y));\n", i, texnoproj[t-1], i);
+                     else
+                         sprintf(buff, "vec4 texColor%d = %s(_gl4es_TexSampler_%d, gl_PointCoord);\n", i, texnoproj[t-1], i);
+-                } else
++                } else if(gl4es_mv_shaders && t==FPE_TEX_RECT)   // a render target's layer for this view (multiview.c)
++                    sprintf(buff, "vec4 texColor%d = texture2D(_gl4es_TexSampler_%d, vec3(_gl4es_TexCoord_%d, gl4es_layer));\n", i, i, i);
++                else
+                     sprintf(buff, "vec4 texColor%d = %s(_gl4es_TexSampler_%d, _gl4es_TexCoord_%d);\n", i, texname[t-1], i, i);
+                 ShadAppend(buff);
+             }
+diff --git a/src/gl/framebuffers.c b/src/gl/framebuffers.c
+index b0f0299..2daf81c 100644
+--- a/src/gl/framebuffers.c
++++ b/src/gl/framebuffers.c
+@@ -1,3 +1,4 @@
++#include "multiview.h"
+ #include "framebuffers.h"
+ 
+ #include "../glx/hardext.h"
+@@ -229,6 +230,8 @@ void APIENTRY_GL4ES gl4es_glBindFramebuffer(GLenum target, GLuint framebuffer) {
+         errorShim(GL_INVALID_VALUE);
+         return;
+     }
++    if(gl4es_mv && target != GL_READ_FRAMEBUFFER && glstate->fbo.fbo_draw && glstate->fbo.fbo_draw != fb)
++        mv_framebuffer_left(glstate->fbo.fbo_draw->id);
+         
+     if (target == GL_FRAMEBUFFER) {
+         glstate->fbo.fbo_read = fb;
+@@ -573,6 +576,14 @@ void APIENTRY_GL4ES gl4es_glFramebufferTexture2D(GLenum target, GLenum attachmen
+ 
+     SetAttachment(fb, attachment, textarget, tex?tex->texture:texture, level);
+ 
++    // both views' layers at once (multiview.c)
++    if(gl4es_mv && (textarget==GL_TEXTURE_RECTANGLE_ARB || textarget==GL_TEXTURE_2D) && tex
++       && mv_attach(ntarget, attachment, tex, fb->id, textarget)) {
++        errorGL();
++        ReadDraw_Pop(target);
++        return;
++    }
++
+     if(attachment>=GL_COLOR_ATTACHMENT0 && attachment<(GL_COLOR_ATTACHMENT0+hardext.maxcolorattach) && tex) {
+         gltexture_t *bound = glstate->texture.bound[0/*glstate->texture.active*/][ENABLED_TEX2D];
+         if((hardext.npot==1 || hardext.npot==2) && (!tex->actual.wrap_s || !tex->actual.wrap_t || !wrap_npot(tex->actual.wrap_s) || !wrap_npot(tex->actual.wrap_t))) {
+diff --git a/src/gl/multiview.c b/src/gl/multiview.c
+new file mode 100644
+index 0000000..1ab3244
+--- /dev/null
++++ b/src/gl/multiview.c
+@@ -0,0 +1,552 @@
++// multiview.c - both eyes of a VR headset in one pass (see multiview.h).
++//
++// Shaders: what gl4es makes of every shader is GLSL ES 1.00, and multiview
++// needs 3.00. The step between them is small and textual - attribute and
++// varying become in and out, the texture2D family becomes texture, the
++// fragment colour a declared output - so it is done on the finished text.
++// A vertex shader's main() is renamed and called from a new one, which takes
++// gl_Position to the view's clip space with that view's matrix, and writes
++// four clip distances that hold it inside the game's screen (-1..1 in the
++// game's clip space, a third matrix away) when the host enables them.
++// A vertex program that already does its own per-view step (arbprog.c in
++// the lindbergh runtime, which declares u_reproj) leaves the game's clip
++// position in gl4es_mvPre instead.
++//
++// Rectangle textures: each one attached to a framebuffer gets a companion
++// GL_TEXTURE_2D_ARRAY of two layers, attached in its place for both views
++// at once, and bound beside it on every unit the rectangle texture is bound
++// to. Shaders sample rectangle units as sampler2DArray at the view's layer
++// (fpe_shader.c, and the runtime's ARB translation).
++
++#include <stdio.h>
++#include <time.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/stat.h>
++
++#include "multiview.h"
++
++#include "../glx/hardext.h"
++#include "gl4es.h"
++#include "glstate.h"
++#include "loader.h"
++#include "string_utils.h"
++
++#define GL_TEXTURE_2D_ARRAY_    0x8C1A
++#define GL_UNIFORM_BUFFER_      0x8A11
++#define GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT_ 0x8A34
++#define GL_DYNAMIC_DRAW_        0x88E8
++#define GL_DEPTH24_STENCIL8_    0x88F0
++#define GL_RGBA8_               0x8058
++#define GL_CLIP_DISTANCE0_      0x3000
++#define GL_INVALID_INDEX_       0xFFFFFFFFu
++#ifndef GL_MIRRORED_REPEAT
++#define GL_MIRRORED_REPEAT      0x8370
++#endif
++#define MV_BINDING 7            // the uniform buffer binding the views' matrices use
++#define MV_UNITS 16
++
++int gl4es_mv = 0;
++int gl4es_mv_shaders = 0;
++int gl4es_mv_trace = 0;         // set by the host: report what each draw binds
++static const char* mv_dump;     // LIBGL_MV_DUMP=<dir>: every converted shader written there
++
++static struct {
++    void (*TexStorage3D)(GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLsizei);
++    void (*TexImage3D)(GLenum, GLint, GLint, GLsizei, GLsizei, GLsizei, GLint, GLenum, GLenum, const void*);
++    void (*GenFramebuffers)(GLsizei, GLuint*);
++    void (*DeleteFramebuffers)(GLsizei, const GLuint*);
++    void (*BindFramebuffer)(GLenum, GLuint);
++    void (*FramebufferTextureLayer)(GLenum, GLenum, GLuint, GLint, GLint);
++    void (*BlitFramebuffer)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
++    void (*FramebufferTexture2D)(GLenum, GLenum, GLenum, GLuint, GLint);
++    GLboolean (*IsEnabled)(GLenum);
++    void (*ReadPixels)(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void*);
++    void (*TexSubImage3D)(GLenum, GLint, GLint, GLint, GLint, GLsizei, GLsizei, GLsizei, GLenum, GLenum, const void*);
++    void (*FramebufferTextureMultiviewOVR)(GLenum, GLenum, GLuint, GLint, GLint, GLsizei);
++    GLuint (*GetUniformBlockIndex)(GLuint, const GLchar*);
++    void (*UniformBlockBinding)(GLuint, GLuint, GLuint);
++    void (*BindBufferRange)(GLenum, GLuint, GLuint, GLintptr, GLsizeiptr);
++    void (*GenBuffers)(GLsizei, GLuint*);
++    void (*BindBuffer)(GLenum, GLuint);
++    void (*BufferData)(GLenum, GLsizeiptr, const void*, GLenum);
++    void (*BufferSubData)(GLenum, GLintptr, GLsizeiptr, const void*);
++    void* (*MapBufferRange)(GLenum, GLintptr, GLsizeiptr, GLbitfield);
++    void (*BufferStorageEXT)(GLenum, GLsizeiptr, const void*, GLbitfield);
++    GLboolean (*UnmapBuffer)(GLenum);
++    void (*GenTextures)(GLsizei, GLuint*);
++    void (*DeleteTextures)(GLsizei, const GLuint*);
++    void (*BindTexture)(GLenum, GLuint);
++    void (*ActiveTexture)(GLenum);
++    void (*TexParameteri)(GLenum, GLenum, GLint);
++    void (*GetIntegerv)(GLenum, GLint*);
++    void (*Enable)(GLenum);
++    void (*Disable)(GLenum);
++    const GLubyte* (*GetString)(GLenum);
++    GLenum (*GetError)(void);
++    void* (*FenceSync)(GLenum, GLbitfield);
++    GLenum (*ClientWaitSync)(void*, GLbitfield, GLuint64);
++    void (*DeleteSync)(void*);
++} mv;
++static int mv_check = -1;       // LIBGL_MV_CHECK=1: report GL errors met before draws
++
++int gl4es_multiview_enable(void)
++{
++    if(gl4es_mv) return 1;
++#define L(n) if(!(*(void**)&mv.n = proc_address(gles, "gl" #n))) { printf("LIBGL: multiview: no gl%s\n", #n); return 0; }
++    L(GetString)
++    const char* ext = (const char*)mv.GetString(GL_EXTENSIONS);
++    { const char* v = getenv("LIBGL_MV_CHECK"); mv_check = v && *v == '1'; }
++    mv_dump = getenv("LIBGL_MV_DUMP");
++    if(mv_dump && !*mv_dump) mv_dump = NULL;
++    if(mv_dump) mkdir(mv_dump, 0755);
++    if(!ext || !strstr(ext, "GL_OVR_multiview2") || !strstr(ext, "GL_EXT_clip_cull_distance")) {
++        printf("LIBGL: multiview: the driver has no GL_OVR_multiview2 or GL_EXT_clip_cull_distance\n");
++        // for checking the shaders elsewhere: made, written out, and not drawn with
++        if(mv_dump) { gl4es_mv_shaders = 1; printf("LIBGL: multiview: shaders only, written to %s\n", mv_dump); }
++        return 0;
++    }
++    L(TexStorage3D) L(FramebufferTextureMultiviewOVR) L(GetUniformBlockIndex) L(UniformBlockBinding)
++    L(BindBufferRange) L(GenBuffers) L(BindBuffer) L(BufferData) L(BufferSubData) L(MapBufferRange) L(UnmapBuffer) L(GenTextures)
++    L(DeleteTextures) L(BindTexture) L(ActiveTexture) L(TexParameteri) L(GetIntegerv) L(Enable) L(Disable)
++    L(TexImage3D) L(TexSubImage3D) L(FenceSync) L(ClientWaitSync) L(DeleteSync)
++    L(GetError) L(BlitFramebuffer) L(FramebufferTexture2D) L(IsEnabled) L(GenFramebuffers) L(DeleteFramebuffers) L(BindFramebuffer) L(FramebufferTextureLayer) L(ReadPixels)
++#undef L
++    if(strstr(ext, "GL_EXT_buffer_storage")) *(void**)&mv.BufferStorageEXT = proc_address(gles, "glBufferStorageEXT");
++    gl4es_mv = gl4es_mv_shaders = 1;
++    return 1;
++}
++
++// ********* the views' matrices *********
++// A ring of slots in one buffer. Each new set of matrices is written once,
++// twice over - not clipping, then clipping - into the next two slots through
++// an unsynchronised mapping; clipping on and off then only moves the
++// binding. Rewriting a buffer the GPU still reads with glBufferSubData made
++// the driver copy or wait on every 2D draw. The ring is cut into segments,
++// each closed with a fence when left: writing into a segment first waits on
++// its fence, so the ring can never overwrite matrices still being drawn with
++// (the game sets about 25 a frame, so in practice it never waits).
++#define MV_SLOTS 16384
++#define MV_SEGS 16
++static GLuint mv_ubo;
++static int mv_stride, mv_slot = -2;
++static void* mv_fence[MV_SEGS];
++static unsigned mv_waits;
++static struct { float m[3][16]; float clip[4]; } mv_block;
++static int mv_have, mv_clip;
++
++static char* mv_mapped;     // the whole ring, mapped once for good (GL_EXT_buffer_storage)
++
++static void mv_bind_slot(int clip)
++{
++    mv.BindBufferRange(GL_UNIFORM_BUFFER_, MV_BINDING, mv_ubo, (GLintptr)(mv_slot + clip) * mv_stride, sizeof(mv_block));
++}
++
++void gl4es_multiview_set(const float m[3][16], int clip)
++{
++    if(!gl4es_mv) return;
++    int same = mv_have && !memcmp(m, mv_block.m, sizeof(mv_block.m));
++    if(same && clip == mv_clip) return;
++    if(clip != mv_clip) {
++        for(int i=0; i<4; i++) (clip ? mv.Enable : mv.Disable)(GL_CLIP_DISTANCE0_ + i);
++        mv_clip = clip;
++    }
++    if(same) { mv_bind_slot(clip); return; }
++    if(!mv_ubo) {
++        GLint align = 256;
++        mv.GetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT_, &align);
++        if(align < 1) align = 256;
++        mv_stride = ((int)sizeof(mv_block) + align - 1) / align * align;
++        mv.GenBuffers(1, &mv_ubo);
++        mv.BindBuffer(GL_UNIFORM_BUFFER_, mv_ubo);
++        // mapped once, persistent and coherent: mapping a slot for each new set
++        // of matrices cost ~100 us on the Quest's driver, every projection
++        if(mv.BufferStorageEXT && !getenv("LIBGL_MV_NOPERSIST")) {
++            GLsizeiptr size = (GLsizeiptr)mv_stride * MV_SLOTS + sizeof(mv_block);
++            mv.BufferStorageEXT(GL_UNIFORM_BUFFER_, size, NULL, 0x0002 | 0x0040 | 0x0080 /*WRITE, PERSISTENT, COHERENT*/);
++            mv_mapped = mv.MapBufferRange(GL_UNIFORM_BUFFER_, 0, size, 0x0002 | 0x0040 | 0x0080);
++            printf("LIBGL: multiview: matrix ring %s\n", mv_mapped ? "mapped for good" : "could not be mapped");
++        }
++        if(!mv_mapped) mv.BufferData(GL_UNIFORM_BUFFER_, (GLsizeiptr)mv_stride * MV_SLOTS, NULL, GL_DYNAMIC_DRAW_);
++    }
++    memcpy(mv_block.m, m, sizeof(mv_block.m));
++    mv_have = 1;
++    int seg_len = MV_SLOTS / MV_SEGS, prev = mv_slot;
++    mv_slot = (mv_slot + 2) % MV_SLOTS;
++    if(prev < 0 || mv_slot / seg_len != prev / seg_len) {
++        if(prev >= 0) mv_fence[prev / seg_len] = mv.FenceSync(0x9117 /*GL_SYNC_GPU_COMMANDS_COMPLETE*/, 0);
++        void** f = &mv_fence[mv_slot / seg_len];
++        if(*f) {
++            if(mv.ClientWaitSync(*f, 0, 0) == 0x911B /*GL_TIMEOUT_EXPIRED*/) {
++                mv.ClientWaitSync(*f, 0x1 /*FLUSH_COMMANDS*/, 1000000000ull);
++                if(!(mv_waits++ & 63)) fprintf(stderr, "LIBGL: multiview: matrix ring waited on the GPU (%u times)\n", mv_waits);
++            }
++            mv.DeleteSync(*f); *f = NULL;
++        }
++    }
++    if(mv_mapped) {
++        for(int c = 0; c < 2; c++) {
++            mv_block.clip[0] = (float)c;
++            memcpy(mv_mapped + (mv_slot + c) * mv_stride, &mv_block, sizeof(mv_block));
++        }
++        mv_bind_slot(clip);
++        return;
++    }
++    mv.BindBuffer(GL_UNIFORM_BUFFER_, mv_ubo);
++    char* p = mv.MapBufferRange(GL_UNIFORM_BUFFER_, (GLintptr)mv_slot * mv_stride, mv_stride + sizeof(mv_block),
++                                0x0002 /*WRITE*/ | 0x0020 /*UNSYNCHRONIZED*/ | 0x0004 /*INVALIDATE_RANGE*/);
++    if(p) {
++        for(int c = 0; c < 2; c++) {
++            mv_block.clip[0] = (float)c;
++            memcpy(p + c * mv_stride, &mv_block, sizeof(mv_block));
++        }
++        mv.UnmapBuffer(GL_UNIFORM_BUFFER_);
++    }
++    mv_bind_slot(clip);
++}
++
++void mv_program_linked(GLuint glprog)
++{
++    if(!gl4es_mv) return;
++    GLuint i = mv.GetUniformBlockIndex(glprog, "gl4es_MV");
++    if(i != GL_INVALID_INDEX_) mv.UniformBlockBinding(glprog, i, MV_BINDING);
++}
++
++// ********* shaders *********
++static const char* mv_defines =
++    "#define texture2D texture\n"
++    "#define texture2DProj textureProj\n"
++    "#define texture2DLod textureLod\n"
++    "#define texture2DProjLod textureProjLod\n"
++    "#define textureCube texture\n"
++    "#define textureCubeLod textureLod\n"
++    "#define texture2DLodEXT textureLod\n"
++    "#define texture2DProjLodEXT textureProjLod\n"
++    "#define textureCubeLodEXT textureLod\n"
++    "#define texture2DGradEXT textureGrad\n"
++    "#define texture3D texture\n"
++    "#define gl4es_layer float(gl_ViewID_OVR)\n";
++
++// extensions ES 3.00 has built in, or that no longer apply
++static const char* mv_dropped[] = {
++    "GL_OES_standard_derivatives", "GL_EXT_shader_texture_lod", "GL_EXT_frag_depth",
++    "GL_EXT_draw_buffers", "GL_OES_texture_3D", "GL_ARB_texture_rectangle", NULL
++};
++
++typedef struct { char* p; int n, cap; } mvbuf;
++static void put(mvbuf* b, const char* s, int n)
++{
++    if(n < 0) n = strlen(s);
++    if(b->n + n + 1 > b->cap) { b->cap = (b->n + n + 1) * 2; b->p = realloc(b->p, b->cap); }
++    memcpy(b->p + b->n, s, n); b->n += n; b->p[b->n] = 0;
++}
++
++char* mv_convert_shader(const char* src, int vertex)
++{
++    // the body, without its #version line and with words renamed
++    const char* body = src;
++    if(!strncmp(body, "#version", 8)) { body = strchr(body, '\n'); body = body ? body + 1 : ""; }
++    int cap = strlen(body) * 2 + 256;
++    char* t = malloc(cap);
++    strcpy(t, body);
++    t = gl4es_inplace_replace_simple(t, &cap, "gl_FragData[0]", "gl4es_FragColor");
++    t = gl4es_inplace_replace(t, &cap, "gl_FragColor", "gl4es_FragColor");
++    t = gl4es_inplace_replace(t, &cap, "gl_FragDepthEXT", "gl_FragDepth");
++    if(vertex) t = gl4es_inplace_replace(t, &cap, "main", "gl4es_vmain");
++    // gl_Position is written once, at the end: some drivers make a poor job
++    // of a per-view position written inside the shader's own loops
++    if(vertex) t = gl4es_inplace_replace(t, &cap, "gl_Position", "gl4es_Pos");
++    int own = vertex && strstr(t, "u_reproj") != NULL;
++
++    mvbuf o = {0};
++    put(&o, "#version 300 es\n#extension GL_OVR_multiview2 : require\n", -1);
++    static int noclip = -1;
++    if(noclip < 0) { const char* v = getenv("LIBGL_MV_NOCLIP"); noclip = v && *v == '1'; }
++    if(vertex && !noclip) put(&o, "#extension GL_EXT_clip_cull_distance : require\n", -1);
++    put(&o, vertex ? "#define attribute in\n#define varying out\n" : "#define varying in\n", -1);
++    put(&o, mv_defines, -1);
++    // the preprocessor lines at the top stay there; declarations go after them
++    char* l = t;
++    while(*l) {
++        char* e = strchr(l, '\n');
++        int n = e ? (int)(e - l + 1) : (int)strlen(l);
++        const char* s = l;
++        while(s < l + n && (*s == ' ' || *s == '\t')) s++;
++        if(s < l + n && *s != '#' && *s != '\n' && *s != '\r') break;
++        int drop = 0;
++        if(!strncmp(s, "#extension", 10))
++            for(int i = 0; mv_dropped[i]; i++) if(strstr(s, mv_dropped[i]) && strstr(s, mv_dropped[i]) < l + n) drop = 1;
++        if(!drop) put(&o, l, n);
++        l += n;
++    }
++    put(&o, "precision highp sampler2DArray;\n", -1);
++    if(vertex)
++        put(&o, "layout(num_views=2) in;\n"
++                "layout(std140) uniform gl4es_MV { highp mat4 gl4es_mvR[2]; highp mat4 gl4es_mvG; highp vec4 gl4es_mvClip; };\n"
++                "highp vec4 gl4es_mvPre;\nhighp vec4 gl4es_Pos;\n", -1);
++    else if(strstr(t, "gl4es_FragColor"))
++        put(&o, "out mediump vec4 gl4es_FragColor;\n", -1);
++    put(&o, l, -1);
++    if(vertex) {
++        put(&o, "\nvoid main() {\n  gl4es_vmain();\n", -1);
++        if(own) put(&o, "  highp vec4 p = gl4es_mvPre;\n  gl_Position = gl4es_Pos;\n", -1);
++        else    put(&o, "  highp vec4 p = gl4es_mvG * gl4es_Pos;\n  gl_Position = gl4es_mvR[gl_ViewID_OVR] * gl4es_Pos;\n", -1);
++        if(!noclip)
++            put(&o, "  if(gl4es_mvClip.x == 0.0) p = vec4(0.0, 0.0, 0.0, 1.0);\n"
++                    "  gl_ClipDistance[0] = p.w - p.x;\n  gl_ClipDistance[1] = p.w + p.x;\n"
++                    "  gl_ClipDistance[2] = p.w - p.y;\n  gl_ClipDistance[3] = p.w + p.y;\n", -1);
++        put(&o, "}\n", -1);
++    }
++    free(t);
++    if(mv_dump) {
++        static int n;
++        char path[512];
++        snprintf(path, sizeof(path), "%s/%04d.%s", mv_dump, n++, vertex ? "vert" : "frag");
++        FILE* f = fopen(path, "w");
++        if(f) { fputs(o.p, f); fclose(f); }
++    }
++    return o.p;
++}
++
++// ********* rectangle textures as two-layer arrays *********
++static GLuint mv_bound[MV_UNITS];   // GL_TEXTURE_2D_ARRAY on each unit, as the driver has it
++
++// gl4es' record of the active unit is not always the driver's (some of its
++// paths switch units behind it), so the unit is chosen here explicitly and
++// the driver's own is put back
++static void bind_array(int unit, GLuint a)
++{
++    if(mv_bound[unit] == a) return;
++    GLint was = GL_TEXTURE0;
++    mv.GetIntegerv(GL_ACTIVE_TEXTURE, &was);
++    if(was != GL_TEXTURE0 + unit) mv.ActiveTexture(GL_TEXTURE0 + unit);
++    mv.BindTexture(GL_TEXTURE_2D_ARRAY_, a);
++    mv_bound[unit] = a;
++    if(was != GL_TEXTURE0 + unit) mv.ActiveTexture(was);
++}
++
++static int is_depth(gltexture_t* tex)
++{
++    return tex->format == GL_DEPTH_COMPONENT || tex->format == GL_DEPTH_STENCIL;
++}
++
++static GLuint array_for(gltexture_t* tex)
++{
++    int w = tex->nwidth ? tex->nwidth : tex->width, h = tex->nheight ? tex->nheight : tex->height;
++    if(tex->mvarray && tex->mv_w == w && tex->mv_h == h) return tex->mvarray;
++    if(tex->mvarray) {
++        for(int u = 0; u < MV_UNITS; u++) if(mv_bound[u] == tex->mvarray) mv_bound[u] = 0;
++        mv.DeleteTextures(1, &tex->mvarray);
++    }
++    GLuint a = 0;
++    mv.GenTextures(1, &a);
++    GLint act = GL_TEXTURE0;
++    mv.GetIntegerv(GL_ACTIVE_TEXTURE, &act);
++    int unit = act - GL_TEXTURE0;
++    GLuint prev = mv_bound[unit];
++    bind_array(unit, a);
++    mv.TexStorage3D(GL_TEXTURE_2D_ARRAY_, 1, is_depth(tex) ? GL_DEPTH24_STENCIL8_ : GL_RGBA8_, w, h, 2);
++    bind_array(unit, prev);
++    tex->mvarray = a; tex->mv_w = w; tex->mv_h = h;
++    tex->mv_min = tex->mv_mag = tex->mv_ws = tex->mv_wt = 0;
++    return a;
++}
++
++// A 2D texture drawn into is drawn in both layers of its array too, and
++// sampled as the 2D texture it is: what the first view drew is copied into it
++// when its framebuffer is left. (The game draws menu models this way, into
++// textures it then shows as sprites.)
++#define MV_COPIES 64
++static struct { GLuint fb; GLenum attachment; gltexture_t* tex; } mv_copy[MV_COPIES];
++
++void mv_framebuffer_left(GLuint fb)
++{
++    static GLuint rd, dr;
++    int any = 0;
++    for(int i = 0; i < MV_COPIES; i++) {
++        gltexture_t* t = mv_copy[i].tex;
++        if(!t || mv_copy[i].fb != fb || !t->mvarray) continue;
++        // a blit: the texture may not be complete yet, which glCopyImageSubData needs
++        if(!any) {
++            any = 1;
++            if(!rd) { mv.GenFramebuffers(1, &rd); mv.GenFramebuffers(1, &dr); }
++            mv.BindFramebuffer(GL_READ_FRAMEBUFFER, rd);
++            mv.BindFramebuffer(GL_DRAW_FRAMEBUFFER, dr);
++        }
++        mv.FramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, t->mvarray, 0, 0);
++        mv.FramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t->glname, 0);
++        GLboolean sc = mv.IsEnabled(GL_SCISSOR_TEST);
++        if(sc) mv.Disable(GL_SCISSOR_TEST);
++        mv.BlitFramebuffer(0, 0, t->mv_w, t->mv_h, 0, 0, t->mv_w, t->mv_h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
++        if(sc) mv.Enable(GL_SCISSOR_TEST);
++        if(mv_check) {
++            static int shown;
++            GLenum e = mv.GetError();
++            if(e && shown++ < 10) printf("LIBGL: multiview: copying texture %u (%dx%d) back: error %#x\n", t->texture, t->mv_w, t->mv_h, e);
++        }
++    }
++    if(any) {   // as gl4es had it
++        mv.BindFramebuffer(GL_FRAMEBUFFER, fb ? fb : glstate->fbo.mainfbo_fbo);
++    }
++}
++
++// A rectangle texture given its pixels (a lookup table, say, not a render
++// target): the same pixels in both layers.
++void mv_upload(gltexture_t* tex, int x, int y, int w, int h, GLenum format, GLenum type, const void* pixels, int whole)
++{
++    // made without pixels (a movie's frames, a render target) it still gets
++    // its layers, for what is given later; depth ones get theirs attached
++    static int noempty = -1;
++    if(noempty < 0) { const char* v = getenv("LIBGL_MV_NOEMPTY"); noempty = v && *v == '1'; }
++    if(!gl4es_mv || !tex || (!pixels && (!whole || is_depth(tex) || noempty))) return;
++    if(whole && mv_check) printf("LIBGL: multiview: rectangle texture %u given pixels, %dx%d, format %#x type %#x\n", tex->texture, w, h, format, type);
++    GLint act = GL_TEXTURE0;
++    mv.GetIntegerv(GL_ACTIVE_TEXTURE, &act);
++    int unit = act - GL_TEXTURE0;
++    GLuint prev = mv_bound[unit];
++    if(whole) {
++        if(tex->mvarray) {
++            for(int u = 0; u < MV_UNITS; u++) if(mv_bound[u] == tex->mvarray) mv_bound[u] = 0;
++            mv.DeleteTextures(1, &tex->mvarray);
++            if(prev == tex->mvarray) prev = 0;
++        }
++        mv.GenTextures(1, &tex->mvarray);
++        bind_array(unit, tex->mvarray);
++        mv.TexImage3D(GL_TEXTURE_2D_ARRAY_, 0, format, tex->nwidth, tex->nheight, 2, 0, format, type, NULL);
++        tex->mv_w = tex->nwidth; tex->mv_h = tex->nheight;
++        tex->mv_min = tex->mv_mag = tex->mv_ws = tex->mv_wt = 0;
++    } else {
++        if(!tex->mvarray) return;
++        bind_array(unit, tex->mvarray);
++    }
++    if(pixels)
++        for(int l = 0; l < 2; l++) mv.TexSubImage3D(GL_TEXTURE_2D_ARRAY_, 0, x, y, l, w, h, 1, format, type, pixels);
++    bind_array(unit, prev);
++}
++
++int mv_attach(GLenum target, GLenum attachment, gltexture_t* tex, GLuint fb, GLenum textarget)
++{
++    if(!gl4es_mv || !tex) return 0;
++    if(textarget == GL_TEXTURE_2D && attachment != GL_DEPTH_ATTACHMENT && attachment != GL_STENCIL_ATTACHMENT
++       && attachment != GL_DEPTH_STENCIL_ATTACHMENT) {
++        int k = -1;
++        for(int i = 0; i < MV_COPIES; i++)
++            if(mv_copy[i].tex && mv_copy[i].fb == fb && mv_copy[i].attachment == attachment) { k = i; break; }
++        for(int i = 0; k < 0 && i < MV_COPIES; i++) if(!mv_copy[i].tex) k = i;
++        if(k < 0) { printf("LIBGL: multiview: too many 2D textures drawn into\n"); return 0; }
++        mv_copy[k].fb = fb; mv_copy[k].attachment = attachment; mv_copy[k].tex = tex;
++    }
++    // a depth array has stencil too: the eyes' framebuffer is drawn with it
++    if(attachment == GL_DEPTH_ATTACHMENT && is_depth(tex)) attachment = GL_DEPTH_STENCIL_ATTACHMENT;
++    mv.FramebufferTextureMultiviewOVR(target, attachment, array_for(tex), 0, 0, 2);
++    return 1;
++}
++
++GLuint gl4es_multiview_array(GLuint texture)
++{
++    gltexture_t* tex = gl4es_getTexture(GL_TEXTURE_RECTANGLE_ARB, texture);
++    return tex ? tex->mvarray : 0;
++}
++
++static GLenum no_mip(GLenum f)
++{
++    return (f == GL_NEAREST || f == GL_NEAREST_MIPMAP_NEAREST || f == GL_NEAREST_MIPMAP_LINEAR) ? GL_NEAREST : GL_LINEAR;
++}
++static GLenum edge(GLenum w)
++{
++    return (w == GL_REPEAT || w == GL_MIRRORED_REPEAT) ? w : GL_CLAMP_TO_EDGE;
++}
++
++// before a draw: each unit's rectangle texture's array, with its filters
++void mv_realize_arrays(void)
++{
++    if(mv_check < 0) { const char* v = getenv("LIBGL_MV_CHECK"); mv_check = v && *v == '1'; }
++    if(mv_check) {
++        static int n, shown;
++        GLenum e = mv.GetError();
++        n++;
++        if(e && shown < 40) { shown++; printf("LIBGL: multiview: GL error %#x before draw %d (program %u)\n", e, n, glstate->gleshard->program); }
++        static GLboolean (*isen)(GLenum);
++        if(!isen) *(void**)&isen = proc_address(gles, "glIsEnabled");
++        int on = 0;
++        for(int i = 0; i < 4; i++) on |= isen(GL_CLIP_DISTANCE0_ + i) << i;
++        static int cshown;
++        if(on && !mv_clip && cshown < 20) { cshown++; printf("LIBGL: multiview: clip distances %#x on at draw %d, not asked for\n", on, n); }
++    }
++    int n = hardext.maxtex < MV_UNITS ? hardext.maxtex : MV_UNITS;
++    for(int u = 0; u < n; u++) {
++        gltexture_t* tex = glstate->texture.bound[u][ENABLED_TEXTURE_RECTANGLE];
++        GLuint a = tex ? tex->mvarray : 0;
++        GLuint had = mv_bound[u];
++        if(mv_bound[u] != a) bind_array(u, a);
++        if(gl4es_mv_trace && u < 4) {
++            GLint was = 0, real = 0;
++            mv.GetIntegerv(GL_ACTIVE_TEXTURE, &was);
++            mv.ActiveTexture(GL_TEXTURE0 + u);
++            mv.GetIntegerv(0x8C1D, &real);
++            mv.ActiveTexture(was);
++            printf("LIBGL: multiview: unit %d: rect texture %u, array %u (cache had %u), driver has %d, active %#x, maxtex %d\n",
++                   u, tex ? tex->texture : 0, a, had, real, was, hardext.maxtex);
++        }
++        if(!a) continue;
++        // what gl4es gave the texture itself (realize_1texture, just before)
++        glsampler_t* s = tex->actual.wrap_s ? &tex->actual : &tex->sampler;
++        GLenum mn = is_depth(tex) ? GL_NEAREST : no_mip(s->min_filter ? s->min_filter : GL_LINEAR);
++        GLenum mg = is_depth(tex) ? GL_NEAREST : no_mip(s->mag_filter ? s->mag_filter : GL_LINEAR);
++        GLenum ws = edge(s->wrap_s), wt = edge(s->wrap_t);
++        if(mv_check && tex->texture && !tex->mv_ws)
++            printf("LIBGL: multiview: texture %u: min %#x mag %#x wrap %#x %#x (set %#x %#x)\n", tex->texture, mn, mg, ws, wt, tex->sampler.wrap_s, tex->sampler.wrap_t);
++        if(mn == tex->mv_min && mg == tex->mv_mag && ws == tex->mv_ws && wt == tex->mv_wt) continue;
++        GLint was = GL_TEXTURE0;
++        mv.GetIntegerv(GL_ACTIVE_TEXTURE, &was);
++        mv.ActiveTexture(GL_TEXTURE0 + u);
++        mv.TexParameteri(GL_TEXTURE_2D_ARRAY_, GL_TEXTURE_MIN_FILTER, mn);
++        mv.TexParameteri(GL_TEXTURE_2D_ARRAY_, GL_TEXTURE_MAG_FILTER, mg);
++        mv.TexParameteri(GL_TEXTURE_2D_ARRAY_, GL_TEXTURE_WRAP_S, ws);
++        mv.TexParameteri(GL_TEXTURE_2D_ARRAY_, GL_TEXTURE_WRAP_T, wt);
++        mv.ActiveTexture(was);
++        tex->mv_min = mn; tex->mv_mag = mg; tex->mv_ws = ws; tex->mv_wt = wt;
++    }
++}
++
++// For finding what goes wrong: one layer of a texture's array, as RGBA bytes
++// (w*h*4 of them). Returns 0 if it has none.
++int gl4es_multiview_read(GLuint texture, GLenum target, int layer, void* out)
++{
++    gltexture_t* tex = gl4es_getTexture(target, texture);
++    if(!gl4es_mv || !tex || !tex->mvarray || is_depth(tex)) return 0;
++    GLuint fb = 0;
++    mv.GenFramebuffers(1, &fb);
++    mv.BindFramebuffer(GL_READ_FRAMEBUFFER, fb);
++    mv.FramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, tex->mvarray, 0, layer);
++    mv.ReadPixels(0, 0, tex->mv_w, tex->mv_h, GL_RGBA, GL_UNSIGNED_BYTE, out);
++    mv.BindFramebuffer(GL_READ_FRAMEBUFFER, glstate->fbo.current_fb ? glstate->fbo.current_fb->id : 0);
++    mv.DeleteFramebuffers(1, &fb);
++    return 1;
++}
++
++// one pixel of the first view's layer of what is being drawn into
++void gl4es_multiview_read_pixel(int x, int y, unsigned char out[4])
++{
++    static void (*attr)(GLenum, GLenum, GLenum, GLint*);
++    if(!attr) *(void**)&attr = proc_address(gles, "glGetFramebufferAttachmentParameteriv");
++    GLint draw = 0, obj = 0;
++    mv.GetIntegerv(0x8CA6 /*GL_DRAW_FRAMEBUFFER_BINDING*/, &draw);
++    attr(0x8CA9 /*GL_DRAW_FRAMEBUFFER*/, GL_COLOR_ATTACHMENT0, 0x8CD1 /*GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME*/, &obj);
++    out[0] = out[1] = out[2] = out[3] = 0;
++    if(!obj) return;
++    GLuint fb = 0;
++    mv.GenFramebuffers(1, &fb);
++    mv.BindFramebuffer(GL_READ_FRAMEBUFFER, fb);
++    mv.FramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, obj, 0, 0);
++    mv.ReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, out);
++    mv.BindFramebuffer(GL_READ_FRAMEBUFFER, draw);
++    mv.DeleteFramebuffers(1, &fb);
++}
++
++// time spent per draw in gl4es' stages, for the host's profiler (ns):
++// textures, program and uniforms, the driver's draw
++double gl4es_drawprof[4];
++int gl4es_drawprof_on;
++double gl4es_now_ns(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1e9 + t.tv_nsec; }
++double gl4es_bufprof_copy, gl4es_bufprof_bytes;
+diff --git a/src/gl/multiview.h b/src/gl/multiview.h
+new file mode 100644
+index 0000000..05038df
+--- /dev/null
++++ b/src/gl/multiview.h
+@@ -0,0 +1,43 @@
++#ifndef _GL4ES_MULTIVIEW_H_
++#define _GL4ES_MULTIVIEW_H_
++
++// Drawing both eyes of a VR headset in one pass (GL_OVR_multiview2).
++//
++// With it on, every shader is compiled for two views, and rectangle textures,
++// the render targets of the games this is for, live as two-layer texture
++// arrays: drawn into both layers at once, and sampled at the layer of the
++// view being drawn. What differs between the views is one matrix per view,
++// from clip space as the game computed it to the view's (gl4es_multiview_set).
++//
++// The host turns it on before any program is built or render target attached.
++
++#include "gles.h"
++#include "texture.h"
++
++extern int gl4es_mv;          // 1: on
++extern int gl4es_mv_shaders;  // shaders are made for two views (also on alone for LIBGL_MV_DUMP)
++
++// returns 1 if the driver can (GL_OVR_multiview2, GL_EXT_clip_cull_distance)
++int  gl4es_multiview_enable(void);
++// the two views' matrices, from clip space as drawn to each view's, and a
++// third from clip space as drawn to the game's own, whose -1..1 is its
++// screen: clip there what is drawn when clip is set
++void gl4es_multiview_set(const float m[3][16], int clip);
++// a rectangle texture's two-layer array, as the driver knows it (0: none)
++GLuint gl4es_multiview_array(GLuint texture);
++// one layer of a texture's array as w*h RGBA bytes, for finding what goes wrong
++int gl4es_multiview_read(GLuint texture, GLenum target, int layer, void* out);
++
++// for gl4es itself
++char* mv_convert_shader(const char* src, int vertex);   // malloc'd
++void  mv_program_linked(GLuint glprog);
++int   mv_attach(GLenum target, GLenum attachment, gltexture_t* tex, GLuint fb, GLenum textarget);
++void  mv_framebuffer_left(GLuint fb);
++void  mv_realize_arrays(void);
++extern double gl4es_drawprof[4];
++extern int gl4es_drawprof_on;
++double gl4es_now_ns(void);
++extern double gl4es_bufprof_copy, gl4es_bufprof_bytes;
++void  mv_upload(gltexture_t* tex, int x, int y, int w, int h, GLenum format, GLenum type, const void* pixels, int whole);
++
++#endif // _GL4ES_MULTIVIEW_H_
+diff --git a/src/gl/oldprogram.c b/src/gl/oldprogram.c
+index 39aa58a..04897f5 100644
+--- a/src/gl/oldprogram.c
++++ b/src/gl/oldprogram.c
+@@ -177,6 +177,7 @@ void APIENTRY_GL4ES gl4es_glProgramStringARB(GLenum target, GLenum format, GLsiz
+         glstate->glsl->error_ptr = 0;
+         return;
+     }
++    if (old->shader->pending) gl4es_shader_send_source(old->shader);
+     if (!old->shader->converted) {
+         DBG(printf("Error with GLSL->GLSL:ES conversion\n");)
+         errorShim(GL_INVALID_OPERATION);
+diff --git a/src/gl/program.c b/src/gl/program.c
+index 2eaeb02..cca2947 100644
+--- a/src/gl/program.c
++++ b/src/gl/program.c
+@@ -1,4 +1,5 @@
+ #include "program.h"
++#include "multiview.h"
+ 
+ #include <stdlib.h>
+ #include <string.h>
+@@ -538,6 +539,8 @@ static void fill_program(program_t *glprogram)
+     int ret;
+     DBG(GLenum e2;)
+ 
++    mv_program_linked(glprogram->id);
++    glprogram->synced_from = NULL;      // its uniforms are the driver's defaults again
+     // init bluitin emulation first
+     builtin_Init(glprogram);
+     // Grab all Uniform
+@@ -581,7 +584,7 @@ static void fill_program(program_t *glprogram)
+                         glprogram->texunits[tu_idx].type=TU_CUBE;
+                         glprogram->texunits[tu_idx].req_tu = glprogram->texunits[tu_idx].act_tu = 0;
+                         ++tu_idx;
+-                    } else if (type==GL_SAMPLER_2D) {
++                    } else if (type==GL_SAMPLER_2D || type==0x8DC1 /*GL_SAMPLER_2D_ARRAY, multiview.c*/) {
+                         glprogram->texunits[tu_idx].id = id;
+                         glprogram->texunits[tu_idx].type=TU_TEX2D;
+                         glprogram->texunits[tu_idx].req_tu = glprogram->texunits[tu_idx].act_tu = 0;
+@@ -608,7 +611,7 @@ static void fill_program(program_t *glprogram)
+         uniform_t *m;
+         khint_t k;
+         kh_foreach(glprogram->uniform, k, m,
+-            if(m->type == GL_SAMPLER_2D || m->type == GL_SAMPLER_CUBE)
++            if(m->type == GL_SAMPLER_2D || m->type == 0x8DC1 /*GL_SAMPLER_2D_ARRAY*/ || m->type == GL_SAMPLER_CUBE)
+                 memset((char*)glprogram->cache.cache+m->cache_offs, 0xff, m->cache_size);
+         )
+     }
+diff --git a/src/gl/program.h b/src/gl/program.h
+index a788da4..13170f9 100644
+--- a/src/gl/program.h
++++ b/src/gl/program.h
+@@ -113,6 +113,7 @@ typedef struct {
+     int             cache_size; // this is GLsizeof(type)*size
+     uintptr_t       parent_offs;    // in case the uniform is from a fpe custom program
+     int             parent_size;    // 0 means not found in parent... like for builtin
++    int             elem;           // fpe_SyncUniforms: 0 not yet known, 1 a whole uniform, 2 "name[i]", an array's element
+ } uniform_t;
+ 
+ KHASH_MAP_DECLARE_INT(uniformlist, uniform_t *);
+@@ -121,6 +122,7 @@ typedef struct {
+     void*           cache;  // buffer of the uniform size
+     int             cap;    // capacity of the cache
+     int             size;   // next available free space in the cache
++    unsigned        gen;    // bumped whenever a value in it changes
+ } uniformcache_t;
+ 
+ typedef struct {
+@@ -276,6 +278,8 @@ typedef struct {
+     GLint                           samplersCube[MAX_TEX];
+     // that will be an fpe_cache_t*
+     void*                           fpe_cache;
++    void*           synced_from;   // fpe.c: the parent program last synced from,
++    unsigned        synced_gen;    // and its cache generation then
+ } program_t;
+ 
+ KHASH_MAP_DECLARE_INT(programlist, program_t *);
+diff --git a/src/gl/shader.c b/src/gl/shader.c
+index 0bde8f1..85be2a6 100644
+--- a/src/gl/shader.c
++++ b/src/gl/shader.c
+@@ -7,6 +7,7 @@
+ #include "glstate.h"
+ #include "loader.h"
+ #include "shaderconv.h"
++#include "multiview.h"
+ 
+ //#define DEBUG
+ #ifdef DEBUG
+@@ -121,6 +122,7 @@ void APIENTRY_GL4ES gl4es_glCompileShader(GLuint shader) {
+     CHECK_SHADER(void, shader)
+ 
+     glshader->compiled = 1;
++    if(glshader->pending) gl4es_shader_send_source(glshader);
+     LOAD_GLES2(glCompileShader);
+     if(gles_glCompileShader) {
+         gles_glCompileShader(glshader->id);
+@@ -169,6 +171,16 @@ void APIENTRY_GL4ES gl4es_glShaderSource(GLuint shader, GLsizei count, const GLc
+         for (int i=0; i<count; i++)
+             strcat(glshader->source, string[i]);
+     }
++    // converting is the costly part: it waits for glCompileShader, which a
++    // program loaded with glProgramBinary never needs
++    if(glshader->converted) { free(glshader->converted); glshader->converted = NULL; }
++    glshader->pending = 1;
++    noerrorShim();
++}
++
++void gl4es_shader_send_source(shader_t *glshader)
++{
++    glshader->pending = 0;
+     LOAD_GLES2(glShaderSource);
+     if (gles_glShaderSource) {
+         // adapt shader if needed (i.e. not an es2 context and shader is not #version 100)
+@@ -176,11 +188,14 @@ void APIENTRY_GL4ES gl4es_glShaderSource(GLuint shader, GLsizei count, const GLc
+             glshader->converted = strdup(glshader->source);
+         else
+             glshader->converted = ConvertShader(glshader->source, glshader->type==GL_VERTEX_SHADER?1:0, &glshader->need);
++        if(gl4es_mv_shaders && glshader->converted) {
++            char* c = mv_convert_shader(glshader->converted, glshader->type==GL_VERTEX_SHADER);
++            if(gl4es_mv) { free(glshader->converted); glshader->converted = c; }
++            else free(c);     // LIBGL_MV_DUMP alone: written out, not used
++        }
+         // send source to GLES2 hardware if any
+-        gles_glShaderSource(shader, 1, (const GLchar * const*)((glshader->converted)?(&glshader->converted):(&glshader->source)), NULL);
+-        errorGL();
+-    } else
+-        noerrorShim();
++        gles_glShaderSource(glshader->id, 1, (const GLchar * const*)((glshader->converted)?(&glshader->converted):(&glshader->source)), NULL);
++    }
+ }
+ 
+ #define SUPER()     \
+@@ -232,6 +247,11 @@ void redoShader(GLuint shader, shaderconv_need_t *need) {
+     free(glshader->converted);
+     memcpy(&glshader->need, need, sizeof(shaderconv_need_t));
+     glshader->converted = ConvertShader(glshader->source, glshader->type==GL_VERTEX_SHADER?1:0, &glshader->need);
++    if(gl4es_mv_shaders && glshader->converted) {
++        char* c = mv_convert_shader(glshader->converted, glshader->type==GL_VERTEX_SHADER);
++        if(gl4es_mv) { free(glshader->converted); glshader->converted = c; }
++        else free(c);     // LIBGL_MV_DUMP alone: written out, not used
++    }
+     // send source to GLES2 hardware if any
+     gles_glShaderSource(shader, 1, (const GLchar * const*)((glshader->converted)?(&glshader->converted):(&glshader->source)), NULL);
+     // recompile...
+diff --git a/src/gl/shader.h b/src/gl/shader.h
+index e080eee..a406625 100644
+--- a/src/gl/shader.h
++++ b/src/gl/shader.h
+@@ -33,6 +33,7 @@ struct shader_s {
+     struct oldprogram_s   *old;     // in case the shader is an old ARB ASM-like program
+     char*           source; // original source of the shader (or converted if coming from "old")
+     char*           converted;  // converted source (or null if nothing)
++    int             pending;    // source set but not yet converted and sent: done at compile
+     // shaderconv
+     shaderconv_need_t  need;    // the varying need / provide of the shader
+ }; // shader_t defined in oldprogram.h
+@@ -43,6 +44,7 @@ GLuint APIENTRY_GL4ES gl4es_glCreateShader(GLenum shaderType);
+ void APIENTRY_GL4ES gl4es_glDeleteShader(GLuint shader);
+ void APIENTRY_GL4ES gl4es_glCompileShader(GLuint shader);
+ void APIENTRY_GL4ES gl4es_glShaderSource(GLuint shader, GLsizei count, const GLchar * const *string, const GLint *length);
++void gl4es_shader_send_source(struct shader_s *glshader);   // convert a pending source now
+ void APIENTRY_GL4ES gl4es_glGetShaderSource(GLuint shader, GLsizei bufSize, GLsizei *length, GLchar *source);
+ GLboolean APIENTRY_GL4ES gl4es_glIsShader(GLuint shader);
+ void APIENTRY_GL4ES gl4es_glGetShaderInfoLog(GLuint shader, GLsizei maxLength, GLsizei *length, GLchar *infoLog);
+diff --git a/src/gl/shaderconv.c b/src/gl/shaderconv.c
+index 3d0f46b..427e15c 100644
+--- a/src/gl/shaderconv.c
++++ b/src/gl/shaderconv.c
+@@ -1,4 +1,5 @@
+ #include "shaderconv.h"
++#include "multiview.h"
+ 
+ #include <stdio.h>
+ #include "../glx/hardext.h"
+@@ -579,7 +580,8 @@ char* ConvertShader(const char* pEntry, int isVertex, shaderconv_need_t *need)
+     Tmp = gl4es_inplace_insert(gl4es_getline(Tmp, 1), useEXTDrawBuffers, Tmp, &tmpsize);
+   }
+   // if some functions are used, add some int/float alternative
+-  if(!fpeShader && !globals4es.nointovlhack) {
++  // (not for GLSL ES 3.00, which forbids overloading built-ins: multiview.c)
++  if(!fpeShader && !globals4es.nointovlhack && !gl4es_mv_shaders) {
+     if(strstr(Tmp, "pow(") || strstr(Tmp, "pow (")) {
+         Tmp = gl4es_inplace_insert(gl4es_getline(Tmp, headline), HackAltPow, Tmp, &tmpsize);
+     }
+diff --git a/src/gl/texture.c b/src/gl/texture.c
+index c0d479a..49d3f3a 100644
+--- a/src/gl/texture.c
++++ b/src/gl/texture.c
+@@ -1,4 +1,5 @@
+ #include "texture.h"
++#include "multiview.h"
+ 
+ #include "../glx/hardext.h"
+ #include "../glx/streaming.h"
+@@ -1428,6 +1429,8 @@ void APIENTRY_GL4ES gl4es_glTexImage2D(GLenum target, GLint level, GLint interna
+                                         format, type, pixels);
+                                         DBG(CheckGLError(1);)
+                 }
++                if(gl4es_mv && target==GL_TEXTURE_RECTANGLE_ARB && level==0)
++                    mv_upload(bound, 0, 0, width, height, format, type, pixels, 1);
+ #ifdef NO_1x1
+                 if(level==0 && (width==1 && height==1 && pixels)) {
+                     // complete the texture, juste in case it use GL_REPEAT
+@@ -1445,6 +1448,8 @@ void APIENTRY_GL4ES gl4es_glTexImage2D(GLenum target, GLint level, GLint interna
+                 gles_glTexImage2D(rtarget, level, format, width, height, border,
+                                 format, type, pixels);
+                 DBG(CheckGLError(1);)
++                if(gl4es_mv && target==GL_TEXTURE_RECTANGLE_ARB && level==0)
++                    mv_upload(bound, 0, 0, width, height, format, type, pixels, 1);
+             }
+             // check if base_level is set... and calculate lower level mipmap
+             if(bound->base_level == level && !(bound->max_level==level && level==0)) {
+@@ -1705,6 +1710,8 @@ void APIENTRY_GL4ES gl4es_glTexSubImage2D(GLenum target, GLint level, GLint xoff
+         gles_glTexSubImage2D(rtarget, level, xoffset, yoffset,
+                      width, height, format, type, pixels);
+         DBG(CheckGLError(1);)
++        if(gl4es_mv && target==GL_TEXTURE_RECTANGLE_ARB && level==0)
++            mv_upload(bound, xoffset, yoffset, width, height, format, type, pixels, 0);
+         // check if base_level is set... and calculate lower level mipmap
+         if(bound->base_level == level && !(bound->max_level==level && level==0)) {
+             int leveln = level, nw = width, nh = height, xx=xoffset, yy=yoffset;
+diff --git a/src/gl/texture.h b/src/gl/texture.h
+index 33e140a..0c0e243 100644
+--- a/src/gl/texture.h
++++ b/src/gl/texture.h
+@@ -156,6 +156,10 @@ typedef struct {
+     glsampler_t sampler;    // internal sampler if not superseded by glBindSampler
+     glsampler_t actual;     // actual sampler
+     float fbtex_ratio; // Lower rendering resolution
++    GLuint mvarray;     // multiview.c: a rectangle texture's two-layer array
++    int mv_w, mv_h;
++    GLenum mv_min, mv_mag, mv_ws, mv_wt;    // its filters and wraps as set
++    int native_levels;  // DXT given to the driver as it is: mip levels so far
+ } gltexture_t;
+ 
+ KHASH_MAP_DECLARE_INT(tex, gltexture_t *);
+diff --git a/src/gl/texture_compressed.c b/src/gl/texture_compressed.c
+index 25d2d74..f3e806c 100644
+--- a/src/gl/texture_compressed.c
++++ b/src/gl/texture_compressed.c
+@@ -1,3 +1,6 @@
++#include <pthread.h>
++#include <time.h>
++static double tc_now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1e3 + t.tv_nsec / 1e6; }
+ #include "texture.h"
+ 
+ #include "../glx/hardext.h"
+@@ -110,6 +113,41 @@ GLenum compressedMinMipmap(GLenum param)
+     }
+ }
+ 
++typedef struct {
++    GLenum format; int width, height, blocksize, transparent0, y0, y1;
++    int simpleAlpha, complexAlpha;
++    const GLvoid* data; GLvoid* pixels;
++} dxt_job_t;
++
++static void* dxt_band(void* arg)
++{
++    dxt_job_t* j = (dxt_job_t*)arg;
++    int bw = (j->width+3)/4;
++    for (int y=j->y0; y<j->y1 && y<j->height; y+=4) {
++        uintptr_t src = (uintptr_t)j->data + (uintptr_t)(y/4)*bw*j->blocksize;
++        for (int x=0; x<j->width; x+=4) {
++            switch(j->format) {
++                case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
++                case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
++                case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:
++                case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:
++                    DecompressBlockDXT1(x, y, j->width, (uint8_t*)src, j->transparent0, &j->simpleAlpha, &j->complexAlpha, j->pixels);
++                    break;
++                case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:
++                case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:
++                    DecompressBlockDXT3(x, y, j->width, (uint8_t*)src, j->transparent0, &j->simpleAlpha, &j->complexAlpha, j->pixels);
++                    break;
++                case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
++                case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:
++                    DecompressBlockDXT5(x, y, j->width, (uint8_t*)src, j->transparent0, &j->simpleAlpha, &j->complexAlpha, j->pixels);
++                    break;
++            }
++            src += j->blocksize;
++        }
++    }
++    return NULL;
++}
++
+ GLvoid *uncompressDXTc(GLsizei width, GLsizei height, GLenum format, GLsizei imageSize, int transparent0, int* simpleAlpha, int* complexAlpha, const GLvoid *data) {
+     // uncompress a DXTc image
+     // get pixel size of uncompressed image => fixed RGBA
+@@ -139,31 +177,42 @@ GLvoid *uncompressDXTc(GLsizei width, GLsizei height, GLenum format, GLsizei ima
+             blocksize = 16;
+             break;
+     }
+-    uintptr_t src = (uintptr_t) data;
+-    for (int y=0; y<height; y+=4) {
+-        for (int x=0; x<width; x+=4) {
+-            switch(format) {
+-                case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
+-                case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT:
+-                case GL_COMPRESSED_SRGB_S3TC_DXT1_EXT:
+-                case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT:
+-                    DecompressBlockDXT1(x, y, width, (uint8_t*)src, transparent0, simpleAlpha, complexAlpha, pixels);
+-                    break;
+-                case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:
+-                case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT:
+-                    DecompressBlockDXT3(x, y, width, (uint8_t*)src, transparent0, simpleAlpha, complexAlpha, pixels);
+-                    break;
+-                case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
+-                case GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT:
+-                    DecompressBlockDXT5(x, y, width, (uint8_t*)src, transparent0, simpleAlpha, complexAlpha, pixels);
+-                    break;
+-            }
+-            src+=blocksize;
+-        }
++    // Large textures are decoded by several threads, a band of block rows
++    // each: a game loading a level's textures stalls a frame for every one.
++    int rows = (height+3)/4;
++    int nthreads = (width*height >= 256*256 && rows >= 8) ? 4 : 1;
++    dxt_job_t job[4];
++    pthread_t th[4];
++    for (int i=0; i<nthreads; i++) {
++        job[i].format = format; job[i].width = width; job[i].height = height; job[i].blocksize = blocksize;
++        job[i].transparent0 = transparent0; job[i].data = data; job[i].pixels = pixels;
++        job[i].y0 = (rows*i/nthreads)*4; job[i].y1 = (rows*(i+1)/nthreads)*4;
++        job[i].simpleAlpha = *simpleAlpha; job[i].complexAlpha = *complexAlpha;
++        if(i && pthread_create(&th[i], NULL, dxt_band, &job[i])) { dxt_band(&job[i]); th[i] = 0; }
++    }
++    dxt_band(&job[0]);
++    for (int i=0; i<nthreads; i++) {
++        if(i && th[i]) pthread_join(th[i], NULL);
++        *simpleAlpha |= job[i].simpleAlpha;
++        *complexAlpha |= job[i].complexAlpha;
+     }
+     return pixels;
+ }
+ 
++static int native_dxt(GLenum format)
++{
++    static int dxt = -1, srgb = 0;
++    if (dxt < 0) {
++        LOAD_GLES(glGetString);
++        const char* e = (const char*)gles_glGetString(GL_EXTENSIONS);
++        const char* v = getenv("LIBGL_NATIVE_DXT");
++        dxt = e && strstr(e, "GL_EXT_texture_compression_s3tc") && !(v && *v == '0');
++        srgb = dxt && strstr(e, "GL_EXT_texture_compression_s3tc_srgb");
++        if (dxt) printf("LIBGL: DXT textures given to the driver as they are%s\n", srgb ? " (sRGB too)" : "");
++    }
++    return dxt && (!isDXTcSRGB(format) || srgb);
++}
++
+ void APIENTRY_GL4ES gl4es_glCompressedTexImage2D(GLenum target, GLint level, GLenum internalformat,
+                             GLsizei width, GLsizei height, GLint border,
+                             GLsizei imageSize, const GLvoid *data) 
+@@ -204,6 +253,43 @@ void APIENTRY_GL4ES gl4es_glCompressedTexImage2D(GLenum target, GLint level, GLe
+     
+     GLenum format = GL_RGBA;
+     GLenum type = GL_UNSIGNED_BYTE;
++
++    // A driver that reads DXT itself (Adreno does) is given the blocks as
++    // they are: decoding them here stalled every level load.
++    if (isDXTc(internalformat) && datab && native_dxt(internalformat)) {
++        LOAD_GLES(glCompressedTexImage2D);
++        LOAD_GLES(glTexParameteri);
++        int rgb = (internalformat==GL_COMPRESSED_RGB_S3TC_DXT1_EXT || internalformat==GL_COMPRESSED_SRGB_S3TC_DXT1_EXT);
++        bound->alpha = !rgb;
++        bound->format = rgb?GL_RGB:GL_RGBA;
++        bound->type = GL_UNSIGNED_BYTE;
++        bound->wanted_internal = bound->internalformat = internalformat;
++        bound->compressed = 1;
++        if (level == 0) {
++            bound->width = bound->nwidth = width;
++            bound->height = bound->nheight = height;
++            bound->adjust = 0;
++            bound->adjustxy[0] = bound->adjustxy[1] = 1.0f;
++            bound->shrink = 0; bound->useratio = 0;
++            bound->valid = 1;
++            bound->native_levels = 0;
++        }
++        if (glstate->fpe_state) {
++            bound->fpe_format = rgb?FPE_TEX_RGB:FPE_TEX_RGBA;
++            if (glstate->fpe_bound_changed < glstate->texture.active+1)
++                glstate->fpe_bound_changed = glstate->texture.active+1;
++        }
++        gles_glCompressedTexImage2D(rtarget, level, internalformat, width, height, border, imageSize, datab);
++        errorGL();
++        // the levels given so far are the whole chain: complete with them
++        if (level+1 > bound->native_levels) {
++            bound->native_levels = level+1;
++            gles_glTexParameteri(rtarget, 0x813D /*GL_TEXTURE_MAX_LEVEL*/, level);
++            if (level) bound->mipmap_auto = 1;
++        }
++        glstate->vao->unpack = unpack;
++        return;
++    }
+         
+     if (isDXTc(internalformat)) {
+         if(level && bound->mipmap_auto==1)
+@@ -229,6 +315,7 @@ void APIENTRY_GL4ES gl4es_glCompressedTexImage2D(GLenum target, GLint level, GLe
+             }
+         }
+         int srgb = isDXTcSRGB(internalformat);
++        double tt0 = tc_now(), tt1 = tt0, tt2 = tt0;
+         int simpleAlpha = 0;
+         int complexAlpha = 0;
+         int transparent0 = (internalformat==GL_COMPRESSED_RGBA_S3TC_DXT1_EXT || internalformat==GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT)?1:0;
+@@ -248,6 +335,7 @@ void APIENTRY_GL4ES gl4es_glCompressedTexImage2D(GLenum target, GLint level, GLe
+             } else {
+                 pixels = uncompressDXTc(width, height, internalformat, imageSize, transparent0, &simpleAlpha, &complexAlpha, datab);
+             }
++            tt1 = tc_now();
+             if(srgb)
+                 pixel_srgb_inplace(pixels, width, height);
+             // automaticaly reduce the pixel size
+@@ -289,7 +377,16 @@ void APIENTRY_GL4ES gl4es_glCompressedTexImage2D(GLenum target, GLint level, GLe
+         if(level && bound && bound->valid)
+             new_intformat = (bound->format==GL_RGB)?GL_COMPRESSED_RGB:GL_COMPRESSED_RGBA;
+         DBG(printf(" => internalformat=%s (Alpha=%d/%d), %dx%d %s/%s\n\n", PrintEnum(new_intformat), simpleAlpha, complexAlpha, width, height, PrintEnum(format), PrintEnum(type));)
++        tt2 = tc_now();
+         gl4es_glTexImage2D(target, level, new_intformat, width, height, border, format, type, half);
++        {
++            static int on = -1;
++            if(on < 0) { const char* v = getenv("LIBGL_TEXTIME"); on = v && *v == '1'; }
++            double tt3 = tc_now();
++            if(on && tt3 - tt0 > 5)
++                printf("LIBGL: compressed %dx%d level %d %#x: decode %.1f ms, convert %.1f ms, upload %.1f ms\n",
++                       width, height, level, internalformat, tt1 - tt0, tt2 - tt1, tt3 - tt2);
++        }
+         // re-update bounded texture info, but not format and type
+         bound->alpha = (simpleAlpha||complexAlpha)?1:0;
+         bound->compressed = 1;
+@@ -365,6 +462,12 @@ void APIENTRY_GL4ES gl4es_glCompressedTexSubImage2D(GLenum target, GLint level,
+     int simpleAlpha = 0;
+     int complexAlpha = 0;
+     int transparent0 = (format==GL_COMPRESSED_RGBA_S3TC_DXT1_EXT || format==GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT)?1:0;
++    gltexture_t* nb = glstate->texture.bound[glstate->texture.active][itarget];
++    if (isDXTc(format) && nb && nb->native_levels) {   // the driver has it as DXT
++        gles_glCompressedTexSubImage2D(map_tex_target(target), level, xoffset, yoffset, width, height, format, imageSize, datab);
++        glstate->vao->unpack = unpack;
++        return;
++    }
+     if (isDXTc(format)) {
+         if(level) {
+             noerrorShim();
+diff --git a/src/gl/texture_params.c b/src/gl/texture_params.c
+index 96e0720..32f2415 100644
+--- a/src/gl/texture_params.c
++++ b/src/gl/texture_params.c
+@@ -1,4 +1,5 @@
+ #include "texture.h"
++#include "multiview.h"
+ 
+ #include "../glx/hardext.h"
+ #include "../glx/streaming.h"
+@@ -861,7 +862,7 @@ void realize_textures(int drawing) {
+ #endif
+     for (int i=0; i<glstate->bound_changed; i++) {
+         // get highest priority texture unit
+-        int tmp = glstate->enable.texture[glstate->texture.active];
++        int tmp = glstate->enable.texture[i];   // each unit's own targets
+         int tgt = ENABLED_TEX2D; // default to TEX2D
+         if(IS_TEX3D(tmp))
+             tgt = ENABLED_TEX3D;
+@@ -941,6 +942,7 @@ void realize_textures(int drawing) {
+         realize_1texture(target, i, tex, glstate->samplers.sampler[i]);
+     }
+     glstate->bound_changed = 0;
++    if(drawing && gl4es_mv) mv_realize_arrays();
+ }
+ 
+ //Direct wrapper
+diff --git a/src/gl/uniform.c b/src/gl/uniform.c
+index 98b5614..ad9a640 100644
+--- a/src/gl/uniform.c
++++ b/src/gl/uniform.c
+@@ -6,6 +6,8 @@
+ #include "loader.h"
+ #include "matvec.h"
+ 
++#define GL_SAMPLER_2D_ARRAY_ 0x8DC1     // multiview.c: render targets sampled as two layers
++
+ //#define DEBUG
+ #ifdef DEBUG
+ #define DBG(a) a
+@@ -32,6 +34,7 @@ int uniformsize(GLenum type) {
+         GOV(GL_BOOL, /*GLboolean*/GLint); //GLboolean is an unsigned char and is not suitable here
+         GOM(GL_FLOAT, GLfloat);
+         GO(GL_SAMPLER_2D, GLint, 1);
++        GO(GL_SAMPLER_2D_ARRAY_, GLint, 1);
+         GO(GL_SAMPLER_CUBE , GLint, 1);
+     // Need other types?
+     }
+@@ -65,6 +68,7 @@ int is_uniform_int(GLenum type) {
+         case GL_BOOL_VEC3:
+         case GL_BOOL_VEC4:
+         case GL_SAMPLER_2D:
++        case GL_SAMPLER_2D_ARRAY_:
+         case GL_SAMPLER_CUBE:
+             return 1;
+     }
+@@ -87,6 +91,7 @@ int n_uniform(GLenum type) {
+         case GL_INT:
+         case GL_BOOL:
+         case GL_SAMPLER_2D:
++        case GL_SAMPLER_2D_ARRAY_:
+         case GL_SAMPLER_CUBE:
+             return 1;
+         case GL_FLOAT_VEC2:
+@@ -180,7 +185,8 @@ void GoUniformfv(program_t *glprogram, GLint location, int size, int count, cons
+         return;
+     }
+     m = kh_value(glprogram->uniform, k);
+-    if(size != n_uniform(m->type) || !is_uniform_float(m->type) || count>m->size) {
++    if(count>m->size) count = m->size;    // past the array's end: the rest are dropped, as GL does
++    if(size != n_uniform(m->type) || !is_uniform_float(m->type)) {
+         errorShim(GL_INVALID_OPERATION);
+         return;
+     }
+@@ -192,6 +198,7 @@ void GoUniformfv(program_t *glprogram, GLint location, int size, int count, cons
+     }
+     // update uniform
+     memcpy((char*)glprogram->cache.cache + m->cache_offs, value, rsize);
++    glprogram->cache.gen++;
+     LOAD_GLES2(glUniform1fv);
+     LOAD_GLES2(glUniform2fv);
+     LOAD_GLES2(glUniform3fv);
+@@ -227,7 +234,8 @@ void GoUniformiv(program_t *glprogram, GLint location, int size, int count, cons
+         return;
+     }
+     m = kh_value(glprogram->uniform, k);
+-    if(size != n_uniform(m->type) || !is_uniform_int(m->type)  || count>m->size) {
++    if(count>m->size) count = m->size;
++    if(size != n_uniform(m->type) || !is_uniform_int(m->type)) {
+         errorShim(GL_INVALID_OPERATION);
+         return;
+     }
+@@ -240,6 +248,7 @@ void GoUniformiv(program_t *glprogram, GLint location, int size, int count, cons
+     DBG(printf("Uniform updated, cache=%p(%d/%d), offset=%p, size=%d\n", glprogram->cache.cache, glprogram->cache.size, glprogram->cache.cap, (void*)m->cache_offs, rsize);)
+     // update uniform
+     memcpy((char*)glprogram->cache.cache + m->cache_offs, value, rsize);
++    glprogram->cache.gen++;
+     LOAD_GLES2(glUniform1iv);
+     LOAD_GLES2(glUniform2iv);
+     LOAD_GLES2(glUniform3iv);
+@@ -539,7 +548,8 @@ void GoUniformMatrix2fv(program_t *glprogram, GLint location, GLsizei count, GLb
+         return;
+     }
+     m = kh_value(glprogram->uniform, k);
+-    if(m->type!=GL_FLOAT_MAT2  || count>m->size) {
++    if(count>m->size) count = m->size;
++    if(m->type!=GL_FLOAT_MAT2) {
+         errorShim(GL_INVALID_OPERATION);
+         return;
+     }
+@@ -562,6 +572,7 @@ void GoUniformMatrix2fv(program_t *glprogram, GLint location, GLsizei count, GLb
+     }
+     // update uniform
+     memcpy((char*)glprogram->cache.cache + m->cache_offs, v, rsize);
++    glprogram->cache.gen++;
+     LOAD_GLES2(glUniformMatrix2fv);
+     if (gles_glUniformMatrix2fv) {
+         gles_glUniformMatrix2fv(m->id, count, GL_FALSE, v);
+@@ -605,7 +616,8 @@ void GoUniformMatrix3fv(program_t *glprogram, GLint location, GLsizei count, GLb
+         return;
+     }
+     m = kh_value(glprogram->uniform, k);
+-    if(m->type!=GL_FLOAT_MAT3  || count>m->size) {
++    if(count>m->size) count = m->size;
++    if(m->type!=GL_FLOAT_MAT3) {
+         errorShim(GL_INVALID_OPERATION);
+         return;
+     }
+@@ -628,6 +640,7 @@ void GoUniformMatrix3fv(program_t *glprogram, GLint location, GLsizei count, GLb
+     }
+     // update uniform
+     memcpy((char*)glprogram->cache.cache + m->cache_offs, v, rsize);
++    glprogram->cache.gen++;
+     LOAD_GLES2(glUniformMatrix3fv);
+     if (gles_glUniformMatrix3fv) {
+         gles_glUniformMatrix3fv(m->id, count, GL_FALSE, v);
+@@ -669,7 +682,8 @@ void GoUniformMatrix4fv(program_t *glprogram, GLint location, GLsizei count, GLb
+         return;
+     }
+     m = kh_value(glprogram->uniform, k);
+-    if(m->type!=GL_FLOAT_MAT4  || count>m->size) {
++    if(count>m->size) count = m->size;
++    if(m->type!=GL_FLOAT_MAT4) {
+         errorShim(GL_INVALID_OPERATION);
+         return;
+     }
+@@ -690,6 +704,7 @@ void GoUniformMatrix4fv(program_t *glprogram, GLint location, GLsizei count, GLb
+     }
+     // update uniform
+     memcpy((char*)glprogram->cache.cache + m->cache_offs, v, rsize);
++    glprogram->cache.gen++;
+     LOAD_GLES2(glUniformMatrix4fv);
+     if (gles_glUniformMatrix4fv) {
+         gles_glUniformMatrix4fv(m->id, count, GL_FALSE, v);

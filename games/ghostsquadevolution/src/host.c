@@ -13,6 +13,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "lindbergh_rt.h"
@@ -36,6 +37,17 @@ int main(int argc, char **argv)
     if (guest_load(argv[1], argc - 1, argv + 1) != 0)
         return 1;
 
+#ifndef __ANDROID__
+    /* 16:9 by default on the desktop (LINDBERGH_WIDE=0 is the arcade's 4:3):
+     * the world seen wider, the HUD at the edges, menus as the arcade's 4:3.
+     * The game culls its models to its own 4:3 view, so that is widened to
+     * match - about 62 degrees vertical holds a 16:9 view's width. */
+    {
+        const char *w = getenv("LINDBERGH_WIDE");
+        if (!w || !*w) { setenv("LINDBERGH_WIDE", "1", 1); w = "1"; }
+        if (*w != '0') setenv("LINDBERGH_CULL_FOV", "62", 0);
+    }
+#endif
     /* Give the imports bodies. Everything the toolkit ships is bound here;
      * anything this game needs beyond that gets bound on top, and whatever is
      * still missing aborts naming itself on first call. */
