@@ -479,10 +479,10 @@ index b0f0299..2daf81c 100644
          if((hardext.npot==1 || hardext.npot==2) && (!tex->actual.wrap_s || !tex->actual.wrap_t || !wrap_npot(tex->actual.wrap_s) || !wrap_npot(tex->actual.wrap_t))) {
 diff --git a/src/gl/multiview.c b/src/gl/multiview.c
 new file mode 100644
-index 0000000..8c3b4c9
+index 0000000..1ab3244
 --- /dev/null
 +++ b/src/gl/multiview.c
-@@ -0,0 +1,532 @@
+@@ -0,0 +1,552 @@
 +// multiview.c - both eyes of a VR headset in one pass (see multiview.h).
 +//
 +// Shaders: what gl4es makes of every shader is GLSL ES 1.00, and multiview
@@ -557,6 +557,7 @@ index 0000000..8c3b4c9
 +    void (*BufferData)(GLenum, GLsizeiptr, const void*, GLenum);
 +    void (*BufferSubData)(GLenum, GLintptr, GLsizeiptr, const void*);
 +    void* (*MapBufferRange)(GLenum, GLintptr, GLsizeiptr, GLbitfield);
++    void (*BufferStorageEXT)(GLenum, GLsizeiptr, const void*, GLbitfield);
 +    GLboolean (*UnmapBuffer)(GLenum);
 +    void (*GenTextures)(GLsizei, GLuint*);
 +    void (*DeleteTextures)(GLsizei, const GLuint*);
@@ -596,6 +597,7 @@ index 0000000..8c3b4c9
 +    L(TexImage3D) L(TexSubImage3D) L(FenceSync) L(ClientWaitSync) L(DeleteSync)
 +    L(GetError) L(BlitFramebuffer) L(FramebufferTexture2D) L(IsEnabled) L(GenFramebuffers) L(DeleteFramebuffers) L(BindFramebuffer) L(FramebufferTextureLayer) L(ReadPixels)
 +#undef L
++    if(strstr(ext, "GL_EXT_buffer_storage")) *(void**)&mv.BufferStorageEXT = proc_address(gles, "glBufferStorageEXT");
 +    gl4es_mv = gl4es_mv_shaders = 1;
 +    return 1;
 +}
@@ -617,6 +619,8 @@ index 0000000..8c3b4c9
 +static unsigned mv_waits;
 +static struct { float m[3][16]; float clip[4]; } mv_block;
 +static int mv_have, mv_clip;
++
++static char* mv_mapped;     // the whole ring, mapped once for good (GL_EXT_buffer_storage)
 +
 +static void mv_bind_slot(int clip)
 +{
@@ -640,7 +644,15 @@ index 0000000..8c3b4c9
 +        mv_stride = ((int)sizeof(mv_block) + align - 1) / align * align;
 +        mv.GenBuffers(1, &mv_ubo);
 +        mv.BindBuffer(GL_UNIFORM_BUFFER_, mv_ubo);
-+        mv.BufferData(GL_UNIFORM_BUFFER_, (GLsizeiptr)mv_stride * MV_SLOTS, NULL, GL_DYNAMIC_DRAW_);
++        // mapped once, persistent and coherent: mapping a slot for each new set
++        // of matrices cost ~100 us on the Quest's driver, every projection
++        if(mv.BufferStorageEXT && !getenv("LIBGL_MV_NOPERSIST")) {
++            GLsizeiptr size = (GLsizeiptr)mv_stride * MV_SLOTS + sizeof(mv_block);
++            mv.BufferStorageEXT(GL_UNIFORM_BUFFER_, size, NULL, 0x0002 | 0x0040 | 0x0080 /*WRITE, PERSISTENT, COHERENT*/);
++            mv_mapped = mv.MapBufferRange(GL_UNIFORM_BUFFER_, 0, size, 0x0002 | 0x0040 | 0x0080);
++            printf("LIBGL: multiview: matrix ring %s\n", mv_mapped ? "mapped for good" : "could not be mapped");
++        }
++        if(!mv_mapped) mv.BufferData(GL_UNIFORM_BUFFER_, (GLsizeiptr)mv_stride * MV_SLOTS, NULL, GL_DYNAMIC_DRAW_);
 +    }
 +    memcpy(mv_block.m, m, sizeof(mv_block.m));
 +    mv_have = 1;
@@ -656,6 +668,14 @@ index 0000000..8c3b4c9
 +            }
 +            mv.DeleteSync(*f); *f = NULL;
 +        }
++    }
++    if(mv_mapped) {
++        for(int c = 0; c < 2; c++) {
++            mv_block.clip[0] = (float)c;
++            memcpy(mv_mapped + (mv_slot + c) * mv_stride, &mv_block, sizeof(mv_block));
++        }
++        mv_bind_slot(clip);
++        return;
 +    }
 +    mv.BindBuffer(GL_UNIFORM_BUFFER_, mv_ubo);
 +    char* p = mv.MapBufferRange(GL_UNIFORM_BUFFER_, (GLintptr)mv_slot * mv_stride, mv_stride + sizeof(mv_block),
