@@ -41,6 +41,30 @@ code in `libmain.so` - nothing is emulated; the unpacked files are its data
 (models, textures, sound, movies). This APK contains the game's files: it is
 for your own headset, not for sharing.
 
+## Release APKs
+
+`.github/workflows/quest.yml` builds the APK on every push to `quest-port`
+(a workflow artifact) and publishes it as a GitHub release for each `v*` tag.
+The APK carries the game's lifted code but none of its files; players copy
+their own `vsg_l` to the headset, as the release notes say
+([QUEST-RELEASE.md](QUEST-RELEASE.md)). The app refuses any `vsg` other than
+the one the code was lifted from, by SHA-256 (`generated/vsg.sha256`).
+
+CI needs three secrets on this repo:
+
+| Secret | What |
+| --- | --- |
+| `GSE_GENERATED_KEY` | read-only deploy key for the private repo `lialan/gse-recomp-generated`, which holds the contents of `games/ghostsquadevolution/generated` |
+| `GSE_KEYSTORE_B64` | the release signing key (PKCS12, alias `gse`), base64 |
+| `GSE_KEYSTORE_PASSWORD` | its password |
+
+After relifting, push the new `generated/` files (and `vsg.sha256`) to the
+private repo. To release: `git tag v0.2.0 && git push fork v0.2.0`.
+
+Release APKs are signed with the project key, local builds with your debug
+key, so moving between the two needs an uninstall (which deletes the app's
+folder, game copy included).
+
 ## Install (code-only APK)
 
 Enable developer mode on the headset, connect it with USB and accept

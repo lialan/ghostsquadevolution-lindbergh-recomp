@@ -10,8 +10,11 @@ android {
         applicationId "org.lindbergh.gse.vr"
         minSdkVersion 29
         targetSdkVersion 32
-        versionCode 1
-        versionName "0.1.0"
+        // quest/build.sh passes these: the release tag, and the SHA-256 of
+        // the vsg executable the game's code was translated from
+        versionCode((project.findProperty("gseVersionCode") ?: "1") as int)
+        versionName(project.findProperty("gseVersionName") ?: "0.1.0")
+        resValue("string", "vsg_sha256", project.findProperty("vsgSha256") ?: "")
         ndk { abiFilters 'arm64-v8a' }
     }
 
@@ -31,12 +34,22 @@ android {
         jniLibs { useLegacyPackaging = true }
     }
     signingConfigs {
-        // sideloading: the local debug key is fine; keep the same key to update in place
+        // Releases (CI) sign with the project key from GSE_KEYSTORE; local
+        // builds with this machine's debug key. Android updates an app in
+        // place only from the same key.
         release {
-            storeFile file(System.getProperty("user.home") + "/.android/debug.keystore")
-            storePassword "android"
-            keyAlias "androiddebugkey"
-            keyPassword "android"
+            def ks = System.getenv("GSE_KEYSTORE")
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv("GSE_KEYSTORE_PASSWORD")
+                keyAlias "gse"
+                keyPassword System.getenv("GSE_KEYSTORE_PASSWORD")
+            } else {
+                storeFile file(System.getProperty("user.home") + "/.android/debug.keystore")
+                storePassword "android"
+                keyAlias "androiddebugkey"
+                keyPassword "android"
+            }
         }
     }
     buildTypes {

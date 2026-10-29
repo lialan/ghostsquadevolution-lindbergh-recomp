@@ -1,0 +1,98 @@
+name: quest
+# Builds the Meta Quest APK. The game's code, lifted to C from the vsg
+# executable, lives in the private repo lialan/gse-recomp-generated (read
+# with the deploy key in GSE_GENERATED_KEY); the APK carries that code but
+# none of the game's files, which players copy to the headset themselves.
+#
+# Every push to quest-port leaves the APK as a workflow artifact; a v* tag
+# also publishes it as a GitHub release.
+on:
+  push:
+    branches: [quest-port]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: 27.3.13750724
+      DEPS: ${{ github.workspace }}/../deps
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Lifted game code (private)
+        uses: actions/checkout@v4
+        with:
+          repository: lialan/gse-recomp-generated
+          ssh-key: ${{ secrets.GSE_GENERATED_KEY }}
+          path: lifted
+      - run: cp lifted/*.c lifted/*.h lifted/vsg.sha256 games/ghostsquadevolution/generated/ && rm -rf lifted
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Android NDK and SDK platform
+        run: |
+          sudo apt-get install -y -q ninja-build
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install \
+            "ndk;$NDK_VERSION" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+          echo "ANDROID_NDK=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/../deps
+          key: quest-deps-${{ hashFiles('quest/deps.sh', 'quest/gl4es.patch') }}
+
+      - run: quest/deps.sh
+
+      - name: Version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then V=$GITHUB_REF_NAME
+          else V=$(git describe --tags --abbrev=0 2>/dev/null || echo v0.1.0)-dev.$(git rev-parse --short HEAD); fi
+          echo "GSE_VERSION=$V" >> "$GITHUB_ENV"
+
+      - name: Build
+        env:
+          GSE_KEYSTORE_B64: ${{ secrets.GSE_KEYSTORE_B64 }}
+          GSE_KEYSTORE_PASSWORD: ${{ secrets.GSE_KEYSTORE_PASSWORD }}
+        run: |
+          echo "$GSE_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/gse.keystore"
+          export GSE_KEYSTORE=$RUNNER_TEMP/gse.keystore
+          quest/build.sh
+          rm -f "$RUNNER_TEMP/gse.keystore"
+
+      - name: Check and name the APK
+        run: |
+          # the release must never carry the game's own files
+          if unzip -l quest/GhostSquadEvolutionVR.apk | grep -q 'assets/vsg_l'; then
+            echo "the APK contains game files"; exit 1
+          fi
+          OUT=GhostSquadEvolutionVR-$GSE_VERSION-quest3.apk
+          mv quest/GhostSquadEvolutionVR.apk "$OUT"
+          sha256sum "$OUT" > "$OUT.sha256"
+          echo "APK=$OUT" >> "$GITHUB_ENV"
+          cat "$OUT.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APK }}
+          path: |
+            ${{ env.APK }}
+            ${{ env.APK }}.sha256
+
+      - name: Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$APK" "$APK.sha256" \
+            --title "Ghost Squad Evolution VR $GITHUB_REF_NAME" --notes-file docs/QUEST-RELEASE.md

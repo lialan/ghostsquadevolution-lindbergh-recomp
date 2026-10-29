@@ -45,7 +45,9 @@ I/O loop after a few hundred frames. The [changelog](CHANGELOG.md) says what
 changed, and the [roadmap](ROADMAP.md) says what is next.
 
 **Meta Quest:** this branch (`quest-port`) adds a standalone VR build: stereo,
-controller aiming, OpenXR. See [docs/QUEST.md](docs/QUEST.md).
+controller aiming, OpenXR. See [docs/QUEST.md](docs/QUEST.md). Prebuilt APKs
+(without the game: bring your own `vsg_l`) are on the
+[releases page](https://github.com/lialan/ghostsquadevolution-lindbergh-recomp/releases).
 
 ![Ghost Squad Evolution, its own resolution, one credit in](docs/credit.png)
 

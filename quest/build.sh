@@ -19,7 +19,7 @@ SDK=${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}
 NDK=${ANDROID_NDK:-$SDK/ndk/27.3.13750724}
 DEPS=${DEPS:-$ROOT/../deps}
 SDL_SRC=${SDL_SRC:-$DEPS/SDL2-2.32.10}
-export JAVA_HOME=${JAVA_HOME:-/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home}
+[ -n "$JAVA_HOME" ] || [ ! -d /opt/homebrew/opt/openjdk@21 ] || export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 case "$(uname -s)" in Darwin) HOST=darwin-x86_64 ;; *) HOST=linux-x86_64 ;; esac
 GAME=
 if [ "$1" = --with-game ]; then
@@ -66,7 +66,12 @@ if [ -n "$GAME" ]; then
 fi
 
 cd "$Q"
-./gradlew --no-daemon -q assembleRelease
+# the vsg the game's code came from (the app refuses any other), and the
+# version: GSE_VERSION (a release tag like v0.2.0) or 0.1.0
+SHA=$(cat "$ROOT/games/ghostsquadevolution/generated/vsg.sha256" 2>/dev/null || true)
+VER=${GSE_VERSION:-v0.1.0}; VER=${VER#v}
+VCODE=$(echo "$VER" | awk -F. '{print $1*10000 + $2*100 + $3}')
+./gradlew --no-daemon -q assembleRelease -PvsgSha256="$SHA" -PgseVersionName="$VER" -PgseVersionCode="$VCODE"
 cp app/build/outputs/apk/release/app-release.apk "$OUT"
 rm -rf "$ASSETS"
 ls -la "$OUT"
