@@ -88,6 +88,12 @@ sets runtime options, one `NAME=value` per line, for example
   pbuffer is the eyes, like the window: the scene is drawn into them directly,
   and the copy laid back over it is left out. Copies of the window
   (`glCopyTexSubImage2D`, the glare's small copy) take the eye image's region.
+- **Side passes into the pbuffer.** Besides the scene, the game draws other
+  views into its pbuffer to copy them into textures - the glare at 80x60,
+  and in some rooms three 512x512 reflection passes after the scene, each
+  cleared first. With the pbuffer being the eyes those clears wiped the scene,
+  leaving the clear colour under the HUD. A pass cleared with less than the
+  whole screen as its viewport now goes into a framebuffer of its own.
 - **Fetched entry points.** It asks GLX for `glMultiDrawElements`,
   `glActiveTexture` and others by name; calls through those pointers now pass
   the stereo layer like imported ones.
