@@ -36,6 +36,10 @@ int main(int argc, char **argv)
     if (guest_load(argv[1], argc - 1, argv + 1) != 0)
         return 1;
 
+    /* The cabinet's monitor: hod4M is the 1280x768 build. LINDBERGH_WIDTH and
+     * LINDBERGH_HEIGHT still override it, and the DIP switches follow. */
+    host_window_hint(1280, 768);
+
     /* Give the imports bodies. Everything the toolkit ships is bound here;
      * anything this game needs beyond that gets bound on top, and whatever is
      * still missing aborts naming itself on first call. */
