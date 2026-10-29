@@ -34,7 +34,7 @@ fi
 if [ ! -f gl4es/lib/libGL.a ]; then
     [ -d gl4es ] || git clone -q https://github.com/ptitSeb/gl4es.git
     git -C gl4es checkout -q "$GL4ES_COMMIT"
-    # two fixes the game needs: per-unit texture targets, glIsEnabled(RECTANGLE)
+    # the fixes the games need (multiview, texture targets, shader conversion): docs/QUEST.md
     git -C gl4es apply --check "$ROOT/quest/gl4es.patch" 2>/dev/null && git -C gl4es apply "$ROOT/quest/gl4es.patch"
     cmake -S gl4es -B gl4es-android -G Ninja $TC -DANDROID=ON -DNOX11=ON -DNOEGL=ON -DSTATICLIB=ON \
         -DNO_INIT_CONSTRUCTOR=ON -DUSE_ANDROID_LOG=ON -DDEFAULT_ES=2 >/dev/null

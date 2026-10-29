@@ -64,10 +64,16 @@ lgjrc
 vt3rc
 gsevorc
 
-# Ghost Squad's own binary and folder (vsg_l/vsg, no extension), and the
-# archives a disc tends to arrive in.
+# The games' own files - Ghost Squad's binary and folder (vsg_l/vsg, no
+# extension), The House of the Dead 4's elf/, fs/ and drv/ - and the archives
+# a disc tends to arrive in.
 vsg
 vsg_l/
+/elf/
+fs/
+drv/
+*.elf
+*.afs
 *.7z
 *.zip
 *.rar

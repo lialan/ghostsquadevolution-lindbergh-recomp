@@ -1,2 +1,3 @@
 // one Android module per game: quest/<game>, built by quest/build.sh <game>
 include ':ghostsquadevolution'
+include ':hotd4'
