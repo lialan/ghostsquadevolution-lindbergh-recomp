@@ -1,226 +1,149 @@
-# ghostsquadevolution-lindbergh-recomp
+# lindbergh-recomp-ports
 
-**Ghost Squad Evolution (Sega, 2007) — a Lindbergh light-gun shooter,
-statically recompiled from its x86 ELF to native C.**
+**Sega Lindbergh arcade games, statically recompiled from their x86 Linux
+executables to native code: on macOS, and standalone in VR on Meta Quest.**
 
-## Install on Meta Quest
+Each game's code is lifted to C by
+[**lindberghrecomp**](https://github.com/sp00nznet/lindberghrecomp) and built
+against its runtime, which stands in for the cabinet: its GL, sound, gun and
+board. Nothing is emulated. Two games so far; more will follow, each in its
+own folder under `games/`.
 
-Quest 3, Quest 3S or Quest Pro, in developer mode. The game itself is not
-included: you need your own copy of the arcade game's `vsg_l` folder.
+> **No game data here.** No executables, no discs, no filesystem images, no
+> keys, and not the lifted C either. The `.gitignore` refuses all of it.
+> Bring your own copy of the game; the build lifts it on your machine. (The
+> Quest release APKs carry a game's code, compiled, but none of its files.)
 
-1. Download `GhostSquadEvolutionVR-<version>-quest3.apk` from the
-   [releases page](https://github.com/lialan/ghostsquadevolution-lindbergh-recomp/releases)
+## The games
+
+| Game | macOS | Meta Quest (VR) |
+| --- | --- | --- |
+| [Ghost Squad Evolution](docs/ghostsquadevolution/QUEST.md) (2007) | plays, 60 fps, 16:9 | plays, released |
+| [The House of the Dead 4](docs/hotd4/QUEST.md) (2005) | plays, 60 fps, 16:9 | plays |
+
+On the Mac both run in 16:9. **Ghost Squad Evolution** draws its 3D wider
+than the cabinet's 4:3 and moves its HUD to the screen's edges; menus stay
+4:3 (`LINDBERGH_WIDE=0` brings back the arcade picture). **The House of the
+Dead 4** runs in its board's own 1360x768 widescreen mode.
+
+| Ghost Squad Evolution | The House of the Dead 4 |
+| --- | --- |
+| ![Ghost Squad Evolution on macOS: mission 1, the villa](docs/ghostsquadevolution/mac-mansion.jpg) | ![The House of the Dead 4 on macOS: the first room](docs/hotd4/mac-zombies.jpg) |
+| ![Ghost Squad Evolution on macOS: the squad breaching a door](docs/ghostsquadevolution/mac-breach.jpg) | ![The House of the Dead 4 on macOS: a dark corridor](docs/hotd4/mac-corridor.jpg) |
+
+*On an M-series Mac: Ghost Squad Evolution at 1920x1080, The House of the
+Dead 4 at 1360x768.*
+
+## Meta Quest
+
+Quest 3, Quest 3S or Quest Pro, in developer mode. The world is in stereo
+around you, the gun is a tracked controller, and the HUD hangs on a screen in
+front of you.
+
+1. Download the game's APK from the
+   [releases page](https://github.com/lialan/lindbergh-recomp-ports/releases)
    and install it with [SideQuest](https://sidequestvr.com) or
-   `adb install -r GhostSquadEvolutionVR-<version>-quest3.apk`.
-2. Copy your whole `vsg_l` folder to the headset as
-   `/sdcard/GhostSquadEvolution/vsg_l` (over USB: *Internal shared storage ›
-   GhostSquadEvolution*), or:
-   `adb push vsg_l /sdcard/GhostSquadEvolution/`
-3. Start **Ghost Squad Evolution VR** from *Unknown Sources*. The first time,
-   it opens the *All files access* screen: allow it, then start the app
-   again. (From a computer instead:
-   `adb shell appops set --uid org.lindbergh.gse.vr MANAGE_EXTERNAL_STORAGE allow`.)
+   `adb install -r <apk>`. (The House of the Dead 4's APK comes with the next
+   release; until then, [build it](docs/hotd4/QUEST.md).)
+2. Copy your game to the headset's shared storage:
+   - **Ghost Squad Evolution:** the whole `vsg_l` folder to
+     `/sdcard/GhostSquadEvolution/vsg_l`
+     (`adb push vsg_l /sdcard/GhostSquadEvolution/`).
+   - **The House of the Dead 4:** its `elf`, `fs` and `drv` folders to
+     `/sdcard/HouseOfTheDead4`
+     (`adb push elf fs drv /sdcard/HouseOfTheDead4/`).
+3. Start the game from *Unknown Sources*. The first time it opens the *All
+   files access* screen: allow it, then start the app again.
 
-The app runs only the game version it was built from (`vsg` with SHA-256
-`2966eed7254b485bd086215df226240ae97464132714a1a1504c52ba2a9e4815`). If the game is missing or a different version, it closes
-and says why in
-`Android/data/org.lindbergh.gse.vr/files/HOW-TO-ADD-THE-GAME.txt`. Updates
-install over the previous version and keep the game, settings and saves.
+Each app runs only the game version it was built from, and says so in
+`Android/data/<package>/files/HOW-TO-ADD-THE-GAME.txt` if the game is
+missing or different. Updates install over the previous version and keep the
+game, settings and saves.
 
 **Playing:** the trigger fires, the grip reloads (or fire pointing off the
-screen), A/X is the action button (CQC), B/Y changes fire mode, a thumbstick
-click is Start, and coins are automatic. The left menu button opens the
-settings panel: sights, laser, gun, hand, screen distance, resolution,
-display rate. More in [docs/QUEST.md](docs/QUEST.md).
+screen), a thumbstick click is Start, and coins are automatic. In Ghost Squad,
+A/X is the action button and B/Y changes fire mode. The left controller's
+menu button opens the settings panel: sights, laser, gun model, hand, screen
+distance, resolution, display rate, recentring, and Reset game. More in each
+game's doc: [Ghost Squad Evolution](docs/ghostsquadevolution/QUEST.md),
+[The House of the Dead 4](docs/hotd4/QUEST.md).
 
-Built on [**lindberghrecomp**](https://github.com/sp00nznet/lindberghrecomp),
-the Sega Lindbergh recompilation toolkit, vendored here as a git submodule. It
-shares the house style of sp00nznet's other recomp projects.
+## macOS
 
-> **No game data here.** No ELF, no disc, no filesystem image, no keys. The
-> `.gitignore` refuses all of it — including the game binary itself, which has
-> no extension and so slipped past an extension list once already. Bring a
-> game tree you can already read; the recompiled C is output you generate and
-> is not in this repository. (The Quest release APK does carry the game's
-> code, compiled, but none of its files.)
+Apple Silicon. Build from your own copy of the game:
 
-**[Join the sp00nznet recomp Discord](https://discord.gg/CRpzGWZFcu)**
+```sh
+brew install cmake ninja sdl2 python@3.11
+git clone --recursive https://github.com/lialan/lindbergh-recomp-ports.git
+cd lindbergh-recomp-ports
 
-### Why this one
+./scripts/build-macos.sh ghostsquadevolution /path/to/vsg_l
+./scripts/run-macos.sh   ghostsquadevolution /path/to/vsg_l
 
-It is the cleanest target on the platform, which is not obvious until you read
-what it links against.
+./scripts/build-macos.sh hotd4 "/path/to/House of the Dead 4"
+./scripts/run-macos.sh   hotd4 "/path/to/House of the Dead 4"
+```
 
-Most of the work on *Let's Go Jungle* went into things this game does not have.
-It wants no Cg, no `XF86VidMode`, and — remarkably for a Sega arcade title —
-**none of SEGA's own libraries**. No `libsegaapi`, no `amLib`, so no base
-board, no security dongle, no JVS packet protocol standing between it and its
-first frame. Its entire platform surface is GLUT, GL/GLU, X11, pthread, libc,
-ncurses and zlib.
-
-It is also the smallest: 6,033 functions against Let's Go Jungle's 31,759.
-
-The one thing it does need that the toolkit has never had is **GLUT**. That is
-not a small detail — GLUT inverts control. A game registers callbacks and hands
-its loop to the toolkit, where *Let's Go Jungle* drives its own loop and calls
-swap when it pleases. This game calls `glutMainLoop`, which never returns, so
-the runtime's handler has to *become* the loop and call back into lifted code.
-
-Three of the Lindbergh titles checked so far are GLUT-based and only two are
-not, so that seam is worth building once and is why this game is next.
-
-## Status
-
-**Alpha, unreleased.** It boots, renders, and takes a coin, then dies in the
-I/O loop after a few hundred frames. The [changelog](CHANGELOG.md) says what
-changed, and the [roadmap](ROADMAP.md) says what is next.
-
-**Meta Quest:** this branch (`quest-port`) adds a standalone VR build: stereo,
-controller aiming, OpenXR. See [docs/QUEST.md](docs/QUEST.md). Prebuilt APKs
-(without the game: bring your own `vsg_l`) are on the
-[releases page](https://github.com/lialan/ghostsquadevolution-lindbergh-recomp/releases).
-
-![Ghost Squad Evolution, its own resolution, one credit in](docs/credit.png)
+`build-macos.sh` lifts the game into the gitignored `games/<game>/generated/`
+and builds `build-mac/<game>`; run it again after an update and only what
+changed is rebuilt. The games start muted.
 
 | | |
-|---|---|
-| Lifts | 6,033 functions, 379,487 instructions, **99.975%** |
-| Builds | clean, first try |
-| Window and GL context | yes, at the 640x480 the game asks for |
-| GLUT loop and callbacks | yes, all twelve |
-| Boot sequence | developer logo, coin, start, SEGA warning screen |
-| Input | coin, start, trigger and gun all reach the game |
-| Runs indefinitely | **no** — dies after a few hundred frames |
+| --- | --- |
+| Aim / fire / reload | mouse / left button / right button (or move the pointer off the window) |
+| Coin / Start | `5` / `1` (player two: `6` / `2`); The House of the Dead 4 takes two credits |
+| Action button, fire mode (Ghost Squad) | `Space`, `F` |
+| Mute | `M` |
+| Test / Service | `T` / `S` |
 
-It gets through CRT start up, its own heap manager, GLUT setup, and into its
-boot sequence. A coin registers (`CREDIT(S) 1`), start is accepted, and it
-reaches the SEGA warning screen. Then, several hundred frames later, the
-process disappears.
+The menu bar rebinds controls, calibrates aim, and sets sound and language.
+Runtime switches (`LINDBERGH_*`) are listed in
+[the toolkit's docs](https://github.com/sp00nznet/lindberghrecomp/blob/main/docs/instruments.md).
 
-### What the failure is, and is not
+## Building the Quest APKs
 
-The exit code is `0xC0000409` — a Windows fail-fast. That is raised through
-`__fastfail`, which the kernel handles directly: no vectored exception
-handler runs, no `atexit` hook runs, and nothing is printed. From the outside
-it is indistinguishable from the process being switched off.
+Each game's Quest doc has the details; in short, with the Android SDK, NDK
+27.3, a JDK 17+, CMake and Ninja:
 
-Ruled out, each by measurement rather than argument:
-
-| | how |
-|---|---|
-| the game calling `exit()` | bound and logged; never fires |
-| an unlifted instruction | `RECOMP_TODO` reports and exits 44; never fires |
-| a CRT invalid parameter | handler installed, and **proven to fire** on a different fault |
-| `abort()` | `_CALL_REPORTFAULT` cleared so it becomes a catchable `SIGABRT`; never fires |
-| a pure virtual call, or an exception unwinding | both bound to report; neither fires |
-| the analog report | `LINDBERGH_NO_GUN=1` pins the gun centred; no change |
-| `qsort` writing out of bounds | logged: 13 elements of 4 bytes, and bounded anyway |
-| stubbed library objects overlapping | each symbol now gets its own 256 KB; no change |
-| a different JVS packet layout to the first game | `amJvspClearPacket` is byte-identical in both |
-| a different backup wrapper argument order | identical in both |
-| stale object files after a header change | full clean rebuild; no change |
-
-What is left is host-side memory corruption: something writes over the host's
-own stack, and `/GS` notices at the next return. The dispatch ring - which is
-flushed to disc precisely because this failure leaves nothing behind - puts
-the last calls in the JVS polling loop both with and without a coin inserted,
-which is where the runtime's own code runs most often rather than necessarily
-where the fault is.
-
-The next step is a debugger. In-process approaches have all been tried.
-
-## Getting Started
-
-There is no one-click setup yet (see the [roadmap](ROADMAP.md)). These steps
-take a clean Windows machine to the SEGA warning screen.
-
-1. **Install the prerequisites.**
-   * [Python 3.11](https://www.python.org/downloads/). Use `py -3.11`, not
-     `python`: on a fresh Windows, `python` can open the Microsoft Store instead.
-   * Visual Studio 2022 (Community is enough) with **Desktop development with
-     C++**. It includes the 32-bit MSVC toolchain and CMake 3.20 or newer.
-   * Git, and an OpenGL GPU driver.
-2. **Have a readable game tree.** The game is `disk1\vsg_l\vsg`, an ELF with no
-   extension. This project does not decrypt discs.
-3. **Clone with the toolkit and install capstone.**
-   ```powershell
-   git clone --recursive https://github.com/sp00nznet/ghostsquadevolution-lindbergh-recomp
-   cd ghostsquadevolution-lindbergh-recomp
-   py -3.11 -m pip install capstone
-   ```
-4. **Lift the game to C.** The output goes to the gitignored
-   `games\ghostsquadevolution\generated\`. Expected output:
-   ```
-   > cd lindberghrecomp
-   > py -3.11 -m tools recomp D:\gse\disk1\vsg_l\vsg ..\games\ghostsquadevolution\generated
-   [*] 6033 functions in 16 translation units, 298 imports
-   lifted 6033 functions, 298 distinct imports -> ..\games\ghostsquadevolution\generated
-   > cd ..
-   ```
-5. **Build.** See [Building from source](#building-from-source). This gives you
-   `build\Release\ghostsquadevolution.exe`.
-6. **Run it from inside the game's directory**, as the cabinet's launcher does.
-   It needs no `TEA_DIR`.
-   ```powershell
-   cd D:\gse\disk1\vsg_l
-   C:\path\to\ghostsquadevolution-lindbergh-recomp\build\Release\ghostsquadevolution.exe vsg
-   ```
-   A 640x480 window opens and shows the developer logo. `5` inserts a coin.
-
-Trip-ups:
-* **`no lifted code ... building the toolkit self-check only`** at configure
-  time means step 4 didn't write into `games\ghostsquadevolution\generated`.
-* **A CMake error about a 64-bit build** means `-A Win32` was left off.
-* **`pcrecomp submodule is missing`** means the clone wasn't recursive. Run
-  `git submodule update --init --recursive`.
-
-## Usage
-
-The cabinet is a keyboard and mouse: `5`/`6` insert a coin for player one/two,
-`1`/`2` start, `T` test, `S` service. The mouse aims the gun, left click is the
-trigger, and right click reloads.
-
-```powershell
-# what the game asks the board for (run from lindberghrecomp\)
-py -3.11 -m tools elf D:\gse\disk1\vsg_l\vsg
-
-# pin the gun to the centre of the screen
-$env:LINDBERGH_NO_GUN = 1
+```sh
+quest/deps.sh                      # SDL2, gl4es (patched), OpenAL Soft, OpenXR loader -> ../deps
+quest/build.sh <game>              # -> quest/<App>.apk, no game data
+quest/install.sh <game> <folder>   # install over adb and copy the game to the headset
 ```
 
-The runtime switches are documented in
-[the toolkit](https://github.com/sp00nznet/lindberghrecomp/blob/main/docs/instruments.md).
-
-## Building from source
-
-```powershell
-cmake -S . -B build -A Win32
-cmake --build build --config Release
-```
-
-The build has to be 32-bit, because the game maps at `0x08048000`. Without
-lifted code, the same commands build the toolkit's self-check only. That is
-what CI does on every push, since CI has no game. The full build also runs on
-netlab (`netlab check ghostsquadevolution-lindbergh-recomp`).
+CI builds both APKs on every push to `main`; a `v*` tag publishes them as one
+release. The lifted code CI builds from lives in a private repository.
 
 ## Layout
 
 ```
-lindberghrecomp/                    the toolkit (git submodule)
-games/ghostsquadevolution/
-  src/host.c                        load the ELF, enter it, get out of the way
-  generated/                        the lifted C (you generate it; gitignored)
+lindberghrecomp/          the toolkit and runtime (git submodule)
+games/<game>/
+  game.conf               what the scripts need to know about the game
+  src/host.c              load the ELF, the game's own hooks, enter it
+  src/android_main.c      the Quest app's entry point
+  generated/              the lifted C (you generate it; gitignored)
+quest/                    the Quest build: deps, gl4es patch, build and install
+quest/<game>/             the game's Android app
+scripts/                  build-macos.sh, run-macos.sh
+docs/<game>/              per-game docs
 ```
 
-## License
+A new game is a new `games/<game>` folder with these files, a
+`quest/<game>` module and a line in `quest/settings.gradle`; CMake builds
+every game whose lifted code is there.
+
+## Credits and license
+
+Built on [**lindberghrecomp**](https://github.com/sp00nznet/lindberghrecomp)
+and pcrecomp by [sp00nznet](https://github.com/sp00nznet), whose
+[Ghost Squad Evolution project](https://github.com/sp00nznet/ghostsquadevolution-lindbergh-recomp)
+this grew from; the Windows build and its notes are in
+[docs/ghostsquadevolution/WINDOWS.md](docs/ghostsquadevolution/WINDOWS.md).
+**[Join the sp00nznet recomp Discord](https://discord.gg/CRpzGWZFcu)**
 
 The host and the recompilation toolchain are original work, MIT-licensed.
 **No game data, no disc images, no keys, and no circumvention of anything.**
-*Ghost Squad Evolution* is © Sega; this is an independent, non-commercial
-preservation project. Built on
-[**lindberghrecomp**](https://github.com/sp00nznet/lindberghrecomp).
-
-## Contributors
-
-No outside contributions yet. To help, read
+*Ghost Squad Evolution* and *The House of the Dead 4* are © Sega; this is an
+independent, non-commercial preservation project. To help, read
 [CONTRIBUTING.md](CONTRIBUTING.md) first.

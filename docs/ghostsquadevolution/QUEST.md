@@ -1,15 +1,12 @@
 # Ghost Squad Evolution VR for Meta Quest
 
 The recompiled game running standalone on a Quest 3, in stereo, aimed with a
-tracked controller. Branch `quest-port`.
+tracked controller.
 
-**Status:** runs in the Android XR emulator (arm64, OpenXR, GLES through ANGLE)
-from attract mode through menus, cutscenes and Mission 1 gameplay at about
-60 fps, with both eyes rendered and the HUD placed correctly. It has **not yet
-been run on a physical Quest**, and the controller mapping has not been
-exercised with real controllers (the emulator has none; the fake gun below
-stands in): input feel, world scale, comfort
-and performance on the XR2 Gen 2 still need a headset.
+**Status:** plays on a Quest 3 at 50-60 fps from attract mode through the
+missions, both eyes drawn in one pass, aimed with a tracked controller;
+released as an APK (see the README). It also runs in the Android XR emulator
+with the stand-in gun below.
 
 ## Build
 
@@ -43,11 +40,11 @@ for your own headset, not for sharing.
 
 ## Release APKs
 
-`.github/workflows/quest.yml` builds the APK on every push to `quest-port`
+`.github/workflows/quest.yml` builds the APK on every push to `main`
 (a workflow artifact) and publishes it as a GitHub release for each `v*` tag.
 The APK carries the game's lifted code but none of its files; players copy
 their own `vsg_l` to the headset, as the release notes say
-([QUEST-RELEASE.md](QUEST-RELEASE.md)). The app refuses any `vsg` other than
+([QUEST-RELEASE.md](../QUEST-RELEASE.md)). The app refuses any `vsg` other than
 the one the code was lifted from, by SHA-256 (`generated/vsg.sha256`).
 
 CI needs three secrets on this repo:

@@ -1,7 +1,7 @@
-# Contributing to ghostsquadevolution-lindbergh-recomp
+# Contributing to lindbergh-recomp-ports
 
-Anything that gets *Ghost Squad Evolution* closer to playable is welcome. Most of the
-work is in the toolkit, so look at
+Anything that makes a game here play better, or brings a new Lindbergh game in,
+is welcome. Most of the work is in the toolkit, so look at
 [lindberghrecomp's CONTRIBUTING](https://github.com/sp00nznet/lindberghrecomp/blob/main/CONTRIBUTING.md)
 first.
 
@@ -11,7 +11,8 @@ first.
   JVS board) goes to [lindberghrecomp](https://github.com/sp00nznet/lindberghrecomp),
   not here. This repo then bumps the submodule.
 - **Something only this game needs** (an address, a value, a quirk of its
-  engine) goes here, in `games/ghostsquadevolution/`.
+  engine) goes here, in `games/<game>/`. A new game gets its own folder
+  there (see the README's Layout).
 
 ## Ground rules
 
