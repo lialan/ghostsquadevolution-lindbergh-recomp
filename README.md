@@ -3,6 +3,36 @@
 **Ghost Squad Evolution (Sega, 2007) — a Lindbergh light-gun shooter,
 statically recompiled from its x86 ELF to native C.**
 
+## Install on Meta Quest
+
+Quest 3, Quest 3S or Quest Pro, in developer mode. The game itself is not
+included: you need your own copy of the arcade game's `vsg_l` folder.
+
+1. Download `GhostSquadEvolutionVR-<version>-quest3.apk` from the
+   [releases page](https://github.com/lialan/ghostsquadevolution-lindbergh-recomp/releases)
+   and install it with [SideQuest](https://sidequestvr.com) or
+   `adb install -r GhostSquadEvolutionVR-<version>-quest3.apk`.
+2. Copy your whole `vsg_l` folder to the headset as
+   `/sdcard/GhostSquadEvolution/vsg_l` (over USB: *Internal shared storage ›
+   GhostSquadEvolution*), or:
+   `adb push vsg_l /sdcard/GhostSquadEvolution/`
+3. Start **Ghost Squad Evolution VR** from *Unknown Sources*. The first time,
+   it opens the *All files access* screen: allow it, then start the app
+   again. (From a computer instead:
+   `adb shell appops set --uid org.lindbergh.gse.vr MANAGE_EXTERNAL_STORAGE allow`.)
+
+The app runs only the game version it was built from (`vsg` with SHA-256
+`2966eed7254b485bd086215df226240ae97464132714a1a1504c52ba2a9e4815`). If the game is missing or a different version, it closes
+and says why in
+`Android/data/org.lindbergh.gse.vr/files/HOW-TO-ADD-THE-GAME.txt`. Updates
+install over the previous version and keep the game, settings and saves.
+
+**Playing:** the trigger fires, the grip reloads (or fire pointing off the
+screen), A/X is the action button (CQC), B/Y changes fire mode, a thumbstick
+click is Start, and coins are automatic. The left menu button opens the
+settings panel: sights, laser, gun, hand, screen distance, resolution,
+display rate. More in [docs/QUEST.md](docs/QUEST.md).
+
 Built on [**lindberghrecomp**](https://github.com/sp00nznet/lindberghrecomp),
 the Sega Lindbergh recompilation toolkit, vendored here as a git submodule. It
 shares the house style of sp00nznet's other recomp projects.
@@ -10,8 +40,9 @@ shares the house style of sp00nznet's other recomp projects.
 > **No game data here.** No ELF, no disc, no filesystem image, no keys. The
 > `.gitignore` refuses all of it — including the game binary itself, which has
 > no extension and so slipped past an extension list once already. Bring a
-> game tree you can already read; the recompiled C is output you generate, and
-> it is never distributed.
+> game tree you can already read; the recompiled C is output you generate and
+> is not in this repository. (The Quest release APK does carry the game's
+> code, compiled, but none of its files.)
 
 **[Join the sp00nznet recomp Discord](https://discord.gg/CRpzGWZFcu)**
 
