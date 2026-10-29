@@ -74,7 +74,7 @@ index 142223b..90ae5b1 100644
          clientisenabled(GL_VERTEX_ARRAY, vertexattrib[ATT_VERTEX].enabled);
          clientisenabled(GL_NORMAL_ARRAY, vertexattrib[ATT_NORMAL].enabled);
 diff --git a/src/gl/fpe.c b/src/gl/fpe.c
-index c21bcf1..d97019e 100644
+index c21bcf1..856a08a 100644
 --- a/src/gl/fpe.c
 +++ b/src/gl/fpe.c
 @@ -1,8 +1,13 @@
@@ -91,7 +91,7 @@ index c21bcf1..d97019e 100644
  #include "glcase.h"
  #include "init.h"
  #include "loader.h"
-@@ -382,6 +387,116 @@ void APIENTRY_GL4ES fpe_oldprogram(fpe_state_t* state) {
+@@ -382,6 +387,119 @@ void APIENTRY_GL4ES fpe_oldprogram(fpe_state_t* state) {
      DBG(printf("Created program %d, with vertex=%d (old=%d) fragment=%d (old=%d), alpha=%d/%d\n", glstate->fpe->prog, glstate->fpe->vert, state->vertex_prg_id, glstate->fpe->frag, state->fragment_prg_id, state->alphatest, state->alphafunc);)
  }
  
@@ -129,10 +129,13 @@ index c21bcf1..d97019e 100644
 +        drv = prgcache_hash(1469598103934665603ull, r?r:"", r?strlen(r):0);
 +        drv = prgcache_hash(drv, ver?ver:"", ver?strlen(ver):0);
 +        drv = prgcache_hash(drv, "gl4es fpe 1", 11);
-+        if(gl4es_mv_shaders) drv = prgcache_hash(drv, "multiview 9", 11);
-+        if(gl4es_mv_shaders && getenv("LIBGL_MV_NOCLIP")) drv = prgcache_hash(drv, "noclip", 6);
 +    }
-+    uint64_t h = prgcache_hash(drv, v->source, strlen(v->source));
++    // multiview at the time of this program, not of the first one: a
++    // program built before multiview was on had the key of one built with it
++    uint64_t h = drv;
++    if(gl4es_mv_shaders) h = prgcache_hash(h, "multiview 9", 11);
++    if(gl4es_mv_shaders && getenv("LIBGL_MV_NOCLIP")) h = prgcache_hash(h, "noclip", 6);
++    h = prgcache_hash(h, v->source, strlen(v->source));
 +    h = prgcache_hash(h, f->source, strlen(f->source));
 +    if(attribs && attribs->attribloc) {
 +        attribloc_t *al;
@@ -208,7 +211,7 @@ index c21bcf1..d97019e 100644
  // ********* Shader stuffs handling *********
  void APIENTRY_GL4ES fpe_program(int ispoint) {
      glstate->fpe_state->point = ispoint;
-@@ -399,48 +514,15 @@ void APIENTRY_GL4ES fpe_program(int ispoint) {
+@@ -399,48 +517,15 @@ void APIENTRY_GL4ES fpe_program(int ispoint) {
              if(state.vertex_prg_id || state.fragment_prg_id) {
                  fpe_oldprogram(&state);
              } else {
@@ -258,7 +261,7 @@ index c21bcf1..d97019e 100644
                  fpe_AddProgramPSA(glstate->fpe->prog, &state);
              }
          }
-@@ -466,24 +548,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
+@@ -466,24 +551,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
          GLint status;
          fpe->vert = gl4es_glCreateShader(GL_VERTEX_SHADER);
          gl4es_glShaderSource(fpe->vert, 1, fpe_CustomVertexShader(glprogram->last_vert->source, state, 0), NULL);
@@ -283,7 +286,7 @@ index c21bcf1..d97019e 100644
          fpe->prog = gl4es_glCreateProgram();
          gl4es_glAttachShader(fpe->prog, fpe->vert);
          gl4es_glAttachShader(fpe->prog, fpe->frag);
-@@ -495,14 +561,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
+@@ -495,14 +564,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
                  gles_glBindAttribLocation(fpe->prog, al->index, al->name);
              );
          }
@@ -299,7 +302,7 @@ index c21bcf1..d97019e 100644
          // now find the program
          khint_t k_program;
          {
-@@ -543,24 +603,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
+@@ -543,24 +606,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
          GLint status;
          fpe->vert = gl4es_glCreateShader(GL_VERTEX_SHADER);
          gl4es_glShaderSource(fpe->vert, 1, fpe_VertexShader(glprogram->default_need, state_vertex), NULL);
@@ -324,7 +327,7 @@ index c21bcf1..d97019e 100644
          fpe->prog = gl4es_glCreateProgram();
          gl4es_glAttachShader(fpe->prog, fpe->vert);
          gl4es_glAttachShader(fpe->prog, fpe->frag);
-@@ -572,14 +616,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
+@@ -572,14 +619,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
                  gles_glBindAttribLocation(fpe->prog, al->index, al->name);
              );
          }
@@ -340,7 +343,7 @@ index c21bcf1..d97019e 100644
          // now find the program
          khint_t k_program;
          {
-@@ -621,14 +659,23 @@ void APIENTRY_GL4ES fpe_SyncUniforms(uniformcache_t *cache, program_t* glprogram
+@@ -621,14 +662,23 @@ void APIENTRY_GL4ES fpe_SyncUniforms(uniformcache_t *cache, program_t* glprogram
      kh_foreach(uniforms, k, m,
          if(m->parent_size) {
              DBG(++cnt;)
@@ -365,7 +368,7 @@ index c21bcf1..d97019e 100644
                  case GL_SAMPLER_CUBE:
                  case GL_INT:
                  case GL_INT_VEC2:
-@@ -826,7 +873,9 @@ void APIENTRY_GL4ES fpe_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
+@@ -826,7 +876,9 @@ void APIENTRY_GL4ES fpe_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
  void APIENTRY_GL4ES fpe_glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices) {
      DBG(printf("fpe_glDrawElements(%s, %d, %s, %p), program=%d, instanceID=%u\n", PrintEnum(mode), count, PrintEnum(type), indices, glstate->glsl->program, glstate->instanceID);)
      scratch_t scratch = {0};
@@ -375,7 +378,7 @@ index c21bcf1..d97019e 100644
      LOAD_GLES(glDrawElements);
      int use_vbo = 0;
      if(glstate->vao->elements && glstate->vao->elements->real_buffer && indices>=glstate->vao->elements->data && indices<=((void*)((char*)glstate->vao->elements->data+glstate->vao->elements->size))) {
-@@ -836,7 +885,9 @@ void APIENTRY_GL4ES fpe_glDrawElements(GLenum mode, GLsizei count, GLenum type,
+@@ -836,7 +888,9 @@ void APIENTRY_GL4ES fpe_glDrawElements(GLenum mode, GLsizei count, GLenum type,
          DBG(printf("Using VBO %d for indices\n", glstate->vao->elements->real_buffer);)
      }
      realize_bufferIndex();
@@ -385,7 +388,7 @@ index c21bcf1..d97019e 100644
      if(use_vbo)
          wantBufferIndex(0);
      free_scratch(&scratch);
-@@ -1124,9 +1175,15 @@ void realize_glenv(int ispoint, int first, int count, GLenum type, const void* i
+@@ -1124,9 +1178,15 @@ void realize_glenv(int ispoint, int first, int count, GLenum type, const void* i
                DBG(printf("Use GLSL program %d\n", glstate->gleshard->program);)
              }
          }
@@ -480,10 +483,10 @@ index b0f0299..2daf81c 100644
          if((hardext.npot==1 || hardext.npot==2) && (!tex->actual.wrap_s || !tex->actual.wrap_t || !wrap_npot(tex->actual.wrap_s) || !wrap_npot(tex->actual.wrap_t))) {
 diff --git a/src/gl/multiview.c b/src/gl/multiview.c
 new file mode 100644
-index 0000000..2ed4035
+index 0000000..14a8b43
 --- /dev/null
 +++ b/src/gl/multiview.c
-@@ -0,0 +1,580 @@
+@@ -0,0 +1,585 @@
 +// multiview.c - both eyes of a VR headset in one pass (see multiview.h).
 +//
 +// Shaders: what gl4es makes of every shader is GLSL ES 1.00, and multiview
@@ -1040,7 +1043,12 @@ index 0000000..2ed4035
 +}
 +
 +// one pixel of the first view's layer of what is being drawn into
++void gl4es_multiview_read_pixel_layer(int x, int y, int layer, unsigned char out[4]);
 +void gl4es_multiview_read_pixel(int x, int y, unsigned char out[4])
++{
++    gl4es_multiview_read_pixel_layer(x, y, 0, out);
++}
++void gl4es_multiview_read_pixel_layer(int x, int y, int layer, unsigned char out[4])
 +{
 +    static void (*attr)(GLenum, GLenum, GLenum, GLint*);
 +    if(!attr) *(void**)&attr = proc_address(gles, "glGetFramebufferAttachmentParameteriv");
@@ -1052,7 +1060,7 @@ index 0000000..2ed4035
 +    GLuint fb = 0;
 +    mv.GenFramebuffers(1, &fb);
 +    mv.BindFramebuffer(GL_READ_FRAMEBUFFER, fb);
-+    mv.FramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, obj, 0, 0);
++    mv.FramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, obj, 0, layer);
 +    mv.ReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, out);
 +    mv.BindFramebuffer(GL_READ_FRAMEBUFFER, draw);
 +    mv.DeleteFramebuffers(1, &fb);
