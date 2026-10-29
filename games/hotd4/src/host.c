@@ -17,23 +17,41 @@
 
 #include "lindbergh_rt.h"
 
-/* The gun's reload. A House of the Dead 4 gun has an accelerometer, and the
- * game reloads when it is shaken: GetRawGunAccel(out, player) reads two JVS
- * analog channels per gun as their distance from centre. A mouse cannot
- * shake, so while the cabinet's reload input is held (the right button, or
- * pointing off the window) the accelerometer reports a hard shake that swings
- * every frame, and at rest it reports none. One gun on a desktop: player 1.
- * Register arguments: eax = out (two shorts), edx = player. */
+/* The gun, at the two functions the game's gun code reads it through. Both
+ * take the board's raw words and the game's stored calibration; a mouse needs
+ * neither, so they answer from the pointer directly.
+ *
+ * GetAdjstGunPos(&x, &y, rawx, rawy, adjust, ...) -> on screen. The position
+ * is a byte each, 0..255 across the whole screen. Register arguments: eax =
+ * &x, edx = &y. The pointer outside the window is off the screen. */
+static void h_gun_pos(CPU *c)
+{
+    int mx, my, w, h;
+    host_mouse_state(&mx, &my, NULL);
+    lindbergh_window_size(&w, &h);
+    int on = mx >= 0 && my >= 0 && mx < w && my < h;
+    long x = (long)mx * 256 / (w > 0 ? w : 1), y = (long)my * 256 / (h > 0 ? h : 1);
+    wr8(c->eax, (uint8_t)(x < 0 ? 0 : x > 255 ? 255 : x));
+    wr8(c->edx, (uint8_t)(y < 0 ? 0 : y > 255 ? 255 : y));
+    c->eax = on;
+}
+
+/* The reload. A House of the Dead 4 gun has an accelerometer and the game
+ * reloads when it is shaken. GetAdjstGunAccel(&a, &b, rawa, rawb, adjust)
+ * gives the two axes as 0..1 past the calibrated dead zone, and anything over
+ * zero is a shake. A mouse cannot shake, so the cabinet's reload input (the
+ * right button held, or the pointer leaving the window, which is a single
+ * frame) shakes the gun hard for a quarter of a second. Register arguments:
+ * eax = &a, edx = &b. */
 static void h_gun_accel(CPU *c)
 {
-    static unsigned swing[2];
-    uint32_t out = c->eax, player = c->edx & 1;
-    unsigned held = player == 0 && (host_cabinet_buttons() & CAB_P1_RELOAD);
-    uint16_t v = 0;
-    if (held) v = (swing[player]++ & 1) ? 0x7FF0 : 0x0400;
-    else swing[player] = 0;
-    wr16(out, v);
-    wr16(out + 2, v);
+    static unsigned left;
+    if (host_cabinet_buttons() & CAB_P1_RELOAD) left = 15;
+    float v = left ? 1.0f : 0.0f;
+    if (left) left--;
+    uint32_t bits; memcpy(&bits, &v, 4);
+    wr32(c->eax, bits);
+    wr32(c->edx, bits);
 }
 
 int main(int argc, char **argv)
@@ -63,8 +81,10 @@ int main(int argc, char **argv)
      * anything this game needs beyond that gets bound on top, and whatever is
      * still missing aborts naming itself on first call. */
     hle_register_all();
-    if (guest_override("_Z14GetRawGunAccelPti", h_gun_accel))
-        fprintf(stderr, "[hotd4] reload: shake the gun with the reload input\n");
+    if (guest_override("_Z14GetAdjstGunPosPhS_ttP18GunAdjustValueTypei", h_gun_pos))
+        fprintf(stderr, "[hotd4] aim: the gun is where the pointer is\n");
+    if (guest_override("_Z16GetAdjstGunAccelPfS_ttP23GunAccelAdjustValueType", h_gun_accel))
+        fprintf(stderr, "[hotd4] reload: the reload input shakes the gun\n");
 
     CPU cpu;
     guest_init_cpu(&cpu);
