@@ -30,7 +30,9 @@ static void h_gun_pos(CPU *c)
     host_mouse_state(&mx, &my, NULL);
     lindbergh_window_size(&w, &h);
     int on = mx >= 0 && my >= 0 && mx < w && my < h;
-    long x = (long)mx * 256 / (w > 0 ? w : 1), y = (long)my * 256 / (h > 0 ? h : 1);
+    /* the nearest of the 256 gun steps, first and last on the window's edges */
+    long x = ((long)mx * 255 + (w - 1) / 2) / (w > 1 ? w - 1 : 1),
+         y = ((long)my * 255 + (h - 1) / 2) / (h > 1 ? h - 1 : 1);
     wr8(c->eax, (uint8_t)(x < 0 ? 0 : x > 255 ? 255 : x));
     wr8(c->edx, (uint8_t)(y < 0 ? 0 : y > 255 ? 255 : y));
     c->eax = on;
@@ -68,7 +70,8 @@ static void h_sprite_res(CPU *c)
      * below the stack pointer once the override is entered. */
     uint32_t ret = rd32(c->esp - 4);
     int w = 640, h = 480;
-    if (ret >= 0x08210c14 && ret < 0x082127c4)     /* CCamMgr::InitAllCamera */
+    if ((ret >= 0x08210c14 && ret < 0x082127c4) ||  /* CCamMgr::InitAllCamera */
+        ret == 0x0807cda4 || ret == 0x0807ca19)      /* CSofdecMgr: the movies */
         lindbergh_window_size(&w, &h);
     wr32(c->eax, (uint32_t)w);
     wr32(c->edx, (uint32_t)h);
@@ -102,6 +105,9 @@ int main(int argc, char **argv)
      * for the cabinet - so it draws at 1280x768 and the window scales that to
      * whatever size it is. LINDBERGH_WIDTH/HEIGHT pick another of its modes. */
     host_window_hint(1280, 720);
+    /* The gun goes straight to the game (h_gun_pos above), so the cabinet's
+     * raw gun words carry the pointer as is too: no correction. */
+    host_aim_default(1, 0, 1, 0);
 
     /* Give the imports bodies. Everything the toolkit ships is bound here;
      * anything this game needs beyond that gets bound on top, and whatever is
