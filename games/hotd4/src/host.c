@@ -73,8 +73,10 @@ int main(int argc, char **argv)
     if (guest_load(argv[1], argc - 1, argv + 1) != 0)
         return 1;
 
-    /* The cabinet's monitor: hod4M is the 1280x768 build. LINDBERGH_WIDTH and
-     * LINDBERGH_HEIGHT still override it, and the DIP switches follow. */
+    /* The monitor the game draws for: the cabinet's 1280x768. The game has a
+     * 1280x720 mode too, but only its 3D follows it - the 2D stays laid out
+     * for the cabinet - so it draws at 1280x768 and the window scales that to
+     * whatever size it is. LINDBERGH_WIDTH/HEIGHT pick another of its modes. */
     host_window_hint(1280, 768);
 
     /* Give the imports bodies. Everything the toolkit ships is bound here;
