@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# build-macos.sh - lift your own copy of the game and build it for macOS.
+# build-macos.sh - lift your own copy of a game and build it for macOS.
 #
-#   ./scripts/build-macos.sh /path/to/vsg_l
+#   ./scripts/build-macos.sh <game> /path/to/the/game
 #
-# The folder is the game's own: it holds `vsg` (the ELF, no extension),
-# `snd_util.so` and `librnalindbergh_jr.so`. A disc root holding vsg_l/ or
-# disk1/vsg_l/ is fine too. Nothing from it is copied into this repo; the
-# lifted C goes to the gitignored games/ghostsquadevolution/generated/.
+# <game> is a folder name under games/ (ghostsquadevolution, hotd4); its
+# game.conf says what the game's folder holds. Nothing from it is copied into
+# this repo; the lifted C goes to the gitignored games/<game>/generated/.
 #
 # Safe to run again: unchanged lifted files keep their timestamps, so a
 # rebuild only recompiles what moved.
@@ -14,7 +13,11 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TOOLKIT="$ROOT/lindberghrecomp"
-GEN="$ROOT/games/ghostsquadevolution/generated"
+ID="${1:-}"
+[ -n "$ID" ] && [ -f "$ROOT/games/$ID/game.conf" ] || {
+    printf 'usage: %s <game> /path/to/the/game\ngames: %s\n' "$0" "$(ls "$ROOT/games" | tr '\n' ' ')" >&2; exit 1; }
+. "$ROOT/games/$ID/game.conf"
+GEN="$ROOT/games/$ID/generated"
 BUILD="$ROOT/build-mac"
 VENV="$ROOT/.venv"
 
@@ -22,18 +25,15 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 say() { printf '==> %s\n' "$*"; }
 
 [ "$(uname -s)" = Darwin ] || die "this script is for macOS; see the README for Windows"
-[ $# -ge 1 ] || die "usage: $0 /path/to/vsg_l"
+[ $# -ge 2 ] || die "usage: $0 $ID \"$FOLDER_HINT\""
 
 # ---- the game folder ----
-GAME=""
-for d in "$1" "$1/vsg_l" "$1/disk1/vsg_l"; do
-    [ -f "$d/vsg" ] && { GAME="$(cd "$d" && pwd)"; break; }
-done
-[ -n "$GAME" ] || die "no 'vsg' in $1 (expected the game's vsg_l folder)"
-for f in vsg snd_util.so librnalindbergh_jr.so; do
+GAME="$(find_game "$2")"
+[ -n "$GAME" ] || die "no $ELF in $2 (expected $TITLE's folder, $FOLDER_HINT)"
+for f in $ELF ${SOLIBS:-}; do
     [ -f "$GAME/$f" ] || die "$GAME/$f is missing"
 done
-say "game: $GAME"
+say "$TITLE: $GAME"
 
 # ---- tools ----
 missing=()
@@ -61,15 +61,18 @@ fi
 VPY="$VENV/bin/python"
 
 # ---- lift ----
-STAGE="$(mktemp -d "${TMPDIR:-/tmp}/gse-lift.XXXXXX")"
+STAGE="$(mktemp -d "${TMPDIR:-/tmp}/$ID-lift.XXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT
 GLH="$(xcrun --show-sdk-path)/System/Library/Frameworks/OpenGL.framework/Headers"
 
 say "lifting the game"
-( cd "$TOOLKIT" && "$VPY" -m tools recomp "$GAME/vsg" "$STAGE" )
-say "lifting the sound libraries"
-# This order fixes where each library lands in guest memory. Keep it.
-( cd "$TOOLKIT" && "$VPY" -m tools.recomp.solib "$STAGE" "$GAME/librnalindbergh_jr.so" "$GAME/snd_util.so" )
+( cd "$TOOLKIT" && "$VPY" -m tools recomp "$GAME/$ELF" "$STAGE" )
+if [ -n "${SOLIBS:-}" ]; then
+    say "lifting the libraries it loads"
+    # The order (game.conf) fixes where each library lands in guest memory.
+    libs=(); for f in $SOLIBS; do libs+=("$GAME/$f"); done
+    ( cd "$TOOLKIT" && "$VPY" -m tools.recomp.solib "$STAGE" "${libs[@]}" )
+fi
 say "generating GL thunks"
 "$VPY" "$TOOLKIT/tools/gen_gl_thunks.py" "$STAGE/recomp_imports.h" "$GLH/gl.h" "$GLH/glext.h" > "$STAGE/recomp_gl_thunks.c"
 
@@ -88,6 +91,6 @@ cmake -S "$ROOT" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
       ${PREFIX:+-DCMAKE_PREFIX_PATH="$PREFIX"} >/dev/null
 cmake --build "$BUILD"
 
-[ -x "$BUILD/ghostsquadevolution" ] || die "build finished without $BUILD/ghostsquadevolution"
-say "built $BUILD/ghostsquadevolution"
-printf '\nRun it with:\n  %s/scripts/run-macos.sh "%s"\n' "$ROOT" "$GAME"
+[ -x "$BUILD/$ID" ] || die "build finished without $BUILD/$ID"
+say "built $BUILD/$ID"
+printf '\nRun it with:\n  %s/scripts/run-macos.sh %s "%s"\n' "$ROOT" "$ID" "$GAME"

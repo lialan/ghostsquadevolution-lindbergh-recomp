@@ -1,1 +1,2 @@
-include ':app'
+// one Android module per game: quest/<game>, built by quest/build.sh <game>
+include ':ghostsquadevolution'

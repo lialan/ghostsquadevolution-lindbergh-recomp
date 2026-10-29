@@ -19,7 +19,7 @@ CMake and Ninja.
 
 ```sh
 quest/deps.sh      # SDL2, gl4es (patched), OpenAL Soft, OpenXR loader -> ../deps
-quest/build.sh     # -> quest/GhostSquadEvolutionVR.apk (about 8 MB, no game data)
+quest/build.sh ghostsquadevolution     # -> quest/GhostSquadEvolutionVR.apk (about 8 MB, no game data)
 ```
 
 `DEPS`, `ANDROID_SDK_ROOT`, `ANDROID_NDK` and `JAVA_HOME` override the default
@@ -29,7 +29,7 @@ locations.
 inside the APK (about 380 MB):
 
 ```sh
-quest/build.sh --with-game "/path/to/Ghost Squad Evolution/vsg_l"
+quest/build.sh ghostsquadevolution --with-game "/path/to/Ghost Squad Evolution/vsg_l"
 adb install -r quest/GhostSquadEvolutionVR-with-game.apk
 ```
 
@@ -72,12 +72,12 @@ debugging, then give the script the game's `vsg_l` folder (the one the desktop
 build runs from):
 
 ```sh
-quest/install.sh "/path/to/Ghost Squad Evolution/vsg_l"
+quest/install.sh ghostsquadevolution "/path/to/Ghost Squad Evolution/vsg_l"
 ```
 
 This installs the APK, grants it all-files access, and copies the game (about
 570 MB) to `/sdcard/GhostSquadEvolution/vsg_l`. Later updates need only
-`quest/install.sh` with no argument. Start **Ghost Squad Evolution VR** from
+`quest/install.sh ghostsquadevolution` with no folder. Start **Ghost Squad Evolution VR** from
 *Unknown Sources*.
 
 ## Controls
@@ -177,7 +177,7 @@ its own GL stream is re-projected per eye.
 | Flat HUD layer on the arcade camera plane | the virtual HUD screen, matched to the game's field of view |
 | Cinematic black bars removed in VR | `letterbox_bar()` |
 | sRGB swapchain written raw | the same: `GL_SRGB8_ALPHA8` with sRGB writes off |
-| Manifest: VR categories, OpenXR permissions and broker queries, `quest3` devices | `quest/app/src/main/AndroidManifest.xml` |
+| Manifest: VR categories, OpenXR permissions and broker queries, `quest3` devices | `quest/ghostsquadevolution/src/main/AndroidManifest.xml` |
 | `tools/build.py`, `Install-Quest.ps1`, `Export-Quest-Diagnostics.ps1` | `quest/build.sh`, `quest/install.sh`, `gse.log` / `env.txt` |
 | ROMs bundled or imported | game files copied to shared storage; none ship in the APK |
 

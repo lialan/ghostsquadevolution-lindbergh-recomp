@@ -14,8 +14,8 @@ __pycache__/
 
 # The lifted game. You generate it; it is derived from Sega's binary and it
 # does not belong in a repo.
-games/ghostsquadevolution/generated/*
-!games/ghostsquadevolution/generated/.gitkeep
+games/*/generated/*
+!games/*/generated/.gitkeep
 
 
 # Agent scratch - never committed.
@@ -72,13 +72,13 @@ vsg_l/
 *.zip
 *.rar
 
-# Quest build (quest/build.sh)
+# Quest build (quest/build.sh <game>)
 /build-quest/
-/quest/GhostSquadEvolutionVR.apk
-/quest/GhostSquadEvolutionVR-with-game.apk
-/quest/app/src/main/assets/
+/quest/*.apk
 /quest/local.properties
 /quest/.gradle/
-/quest/app/build/
-/quest/app/src/main/libs/
-/quest/app/src/main/java/org/libsdl/
+/quest/build/
+/quest/*/build/
+/quest/*/src/main/assets/
+/quest/*/src/main/libs/
+/quest/*/src/main/java/org/libsdl/

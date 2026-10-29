@@ -1,24 +1,33 @@
 #!/bin/sh
-# Install the APK on a headset over adb and copy the game to it
-# (/sdcard/GhostSquadEvolution/vsg_l).
+# Install a game's APK on a headset over adb and copy the game to it.
 #
-#   quest/install.sh "/path/to/Ghost Squad Evolution/vsg_l"
+#   quest/install.sh <game> "/path/to/the game's folder"
 #
-# The game folder is the one the desktop build runs from (vsg_l, with the
-# vsg executable in it); about 560 MB is copied once. Run again with no
-# argument to update only the APK.
+# <game> is a folder name under games/; its game.conf says where on the
+# headset the game goes. The folder is the one the desktop build runs from.
+# The game is copied once; run again with only <game> to update the APK.
 set -e
 Q=$(cd "$(dirname "$0")" && pwd)
-PKG=org.lindbergh.gse.vr
-DEST=/sdcard/GhostSquadEvolution
-adb install -r "$Q/GhostSquadEvolutionVR.apk"
+ROOT=$(dirname "$Q")
+ID=$1
+[ -n "$ID" ] && [ -f "$ROOT/games/$ID/game.conf" ] || { echo "usage: $0 <game> [game folder]; games: $(ls "$ROOT/games")"; exit 1; }
+. "$ROOT/games/$ID/game.conf"
+adb install -r "$Q/$APK.apk"
 # the game is read from shared storage
-adb shell appops set --uid $PKG MANAGE_EXTERNAL_STORAGE allow
-if [ -n "$1" ]; then
-    [ -f "$1/vsg" ] || { echo "$1 has no vsg executable - give the vsg_l folder"; exit 1; }
-    adb shell mkdir -p "$DEST/vsg_l"
-    # the contents, so the folder on the headset is vsg_l whatever it is called here
-    (cd "$1" && for f in * .[!.]*; do [ -e "$f" ] && adb push "$f" "$DEST/vsg_l/"; done)
+adb shell appops set --uid "$PKG" MANAGE_EXTERNAL_STORAGE allow
+if [ -n "$2" ]; then
+    GAME=$(find_game "$2")
+    [ -n "$GAME" ] || { echo "$2 has no $ELF - give the game's folder ($FOLDER_HINT)"; exit 1; }
+    DEST=$HEADSET_DIR${HEADSET_SUB:+/$HEADSET_SUB}
+    echo "copying the game to $DEST ($SIZE)"
+    adb shell mkdir -p "$DEST"
+    for part in $GAME_PARTS; do
+        if [ "$part" = . ]; then    # the contents, so the folder on the headset has its name whatever it is called here
+            (cd "$GAME" && for f in * .[!.]*; do [ -e "$f" ] && adb push "$f" "$DEST/"; done)
+        else
+            adb push "$GAME/$part" "$DEST/"
+        fi
+    done
 fi
-echo "Installed. Start \"Ghost Squad Evolution VR\" from Unknown Sources."
-echo "Log of the last run: adb shell cat $DEST/gse.log"
+echo "Installed. Start \"$APP\" from Unknown Sources."
+echo "Log of the last run: adb shell cat $HEADSET_DIR/$LOG"

@@ -52,5 +52,11 @@
                 <category android:name="org.khronos.openxr.intent.category.IMMERSIVE_HMD" />
             </intent-filter>
         </activity>
+        <!-- the settings panel's "Reset game": starts the game again once it has closed -->
+        <activity android:name="org.lindbergh.gse.Restart"
+                  android:process=":restart"
+                  android:theme="@android:style/Theme.NoDisplay"
+                  android:excludeFromRecents="true"
+                  android:exported="false" />
     </application>
 </manifest>

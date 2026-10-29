@@ -12,9 +12,9 @@ android {
         targetSdkVersion 32
         // quest/build.sh passes these: the release tag, and the SHA-256 of
         // the vsg executable the game's code was translated from
-        versionCode((project.findProperty("gseVersionCode") ?: "1") as int)
-        versionName(project.findProperty("gseVersionName") ?: "0.1.0")
-        resValue("string", "vsg_sha256", project.findProperty("vsgSha256") ?: "")
+        versionCode((project.findProperty("appVersionCode") ?: "1") as int)
+        versionName(project.findProperty("appVersionName") ?: "0.1.0")
+        resValue("string", "vsg_sha256", project.findProperty("elfSha256") ?: "")
         ndk { abiFilters 'arm64-v8a' }
     }
 
