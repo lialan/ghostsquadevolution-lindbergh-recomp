@@ -100,11 +100,11 @@ int main(int argc, char **argv)
     if (guest_load(argv[1], argc - 1, argv + 1) != 0)
         return 1;
 
-    /* The monitor the game draws for: the cabinet's 1280x768. The game has a
-     * 1280x720 mode too, but only its 3D follows it - the 2D stays laid out
-     * for the cabinet - so it draws at 1280x768 and the window scales that to
-     * whatever size it is. LINDBERGH_WIDTH/HEIGHT pick another of its modes. */
-    host_window_hint(1280, 720);
+    /* The monitor the game draws for. 16:9 is the board's 1360x768 mode - its
+     * DIP switches have no 1280x720 one - and the game renders and aims for
+     * 1360x768, so the frame is that size too and the window scales it.
+     * LINDBERGH_WIDTH/HEIGHT pick another mode (1280x768 is the cabinet's). */
+    host_window_hint(1360, 768);
     /* The gun goes straight to the game (h_gun_pos above), so the cabinet's
      * raw gun words carry the pointer as is too: no correction. */
     host_aim_default(1, 0, 1, 0);
@@ -116,7 +116,7 @@ int main(int argc, char **argv)
     {
         int w, h;
         lindbergh_window_size(&w, &h);
-        if (w * 9 == h * 16 && guest_override("_Z19GetSpriteResolutionPjS_", h_sprite_res)) {
+        if (w * 768 == h * 1360 && guest_override("_Z19GetSpriteResolutionPjS_", h_sprite_res)) {
             fprintf(stderr, "[hotd4] 16:9: the 2D keeps its 4:3 layout\n");
             hud_widen_enable(0.75f, hud_anchored);
             /* the 2D is laid out in 640x480 pixels from the top left, and
