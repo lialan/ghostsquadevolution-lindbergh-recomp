@@ -185,6 +185,14 @@ had bound. `LINDBERGH_SCENE_STATS=1` reports world draws per frame, which is
 what menu detection would go by (`LINDBERGH_MENU_DRAWS=<n>`; off by default,
 as sparse gameplay scenes tripped it and flattened the world onto the screen).
 
+Getting to a scene for testing: `LINDBERGH_ROUTE=<n>` puts the player on
+route `n` a second into a mission (`LINDBERGH_ROUTE_LOG=1` reports route
+changes; the plane's routes are 20-38, its cargo hold 34-38), and
+`LINDBERGH_PATHFRAME=<f>` places them `f` frames along it (negative: from its
+end). `LINDBERGH_GOD=1` makes the player take no damage.
+`LINDBERGH_SHIMMER=<strength>` turns on the plane finale's air shimmer
+(`3` is the finale's) in whatever scene is running.
+
 On the headset itself, the game folder in the app's own storage is not
 writable over adb, but the folder above it is: put `env.txt` (and `vr.cfg`)
 in `/sdcard/Android/data/org.lindbergh.gse.vr/files/` and they are read from
