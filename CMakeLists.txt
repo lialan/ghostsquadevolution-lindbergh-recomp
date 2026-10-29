@@ -20,14 +20,33 @@ set(GEN "${CMAKE_CURRENT_SOURCE_DIR}/games/hotd4/generated")
 
 file(GLOB LIFTED "${GEN}/recomp_funcs_*.c")
 if(LIFTED AND EXISTS "${GEN}/recomp_imports.h")
-    add_executable(hotd4
-        games/hotd4/src/host.c
-        ${LIFTED}
-    )
+    if(ANDROID)
+        # Meta Quest: SDL's Java side loads libmain.so and calls SDL_main
+        # (android_main.c), which runs host.c's main.
+        add_library(hotd4 SHARED
+            games/hotd4/src/host.c
+            games/hotd4/src/android_main.c
+            ${LIFTED}
+        )
+        set_target_properties(hotd4 PROPERTIES OUTPUT_NAME main)
+        set_source_files_properties(games/hotd4/src/host.c
+            PROPERTIES COMPILE_DEFINITIONS main=game_main)
+    else()
+        add_executable(hotd4
+            games/hotd4/src/host.c
+            ${LIFTED}
+        )
+    endif()
     if(NOT WIN32)
         # Typed GL thunks for a 64-bit host, generated from the host's GL headers
-        # (lindberghrecomp/tools/gen_gl_thunks.py).
-        target_sources(hotd4 PRIVATE "${GEN}/recomp_gl_thunks.c")
+        # (lindberghrecomp/tools/gen_gl_thunks.py). The game asks GLX for
+        # entry points by name, so it is every function the headers declare:
+        # the Quest's from gl4es' headers, the Mac's from its SDK.
+        if(ANDROID)
+            target_sources(hotd4 PRIVATE "${GEN}/recomp_gl_thunks_android.c")
+        else()
+            target_sources(hotd4 PRIVATE "${GEN}/recomp_gl_thunks.c")
+        endif()
         # the dlopened sound libraries, lifted by lindberghrecomp/tools/recomp/solib.py
         file(GLOB SOLIB "${GEN}/recomp_solib_*.c")
         target_sources(hotd4 PRIVATE ${SOLIB})

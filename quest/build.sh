@@ -1,0 +1,77 @@
+#!/bin/sh
+# Build the Meta Quest APK.
+#
+#   quest/build.sh                         -> quest/HouseOfTheDead4VR.apk
+#   quest/build.sh --with-game <game>      -> quest/HouseOfTheDead4VR-with-game.apk
+#
+# The first carries no game files (quest/install.sh copies them to the
+# headset). The second has your game folder (elf, fs, drv) inside and unpacks
+# it on its first start: one file to install, of about 3 GB. It holds the
+# game's files - keep it to yourself.
+#
+# Needs the lifted game in games/hotd4/generated (see the
+# README), the Android SDK with NDK 27, a JDK 17+, and the dependencies built
+# for arm64 Android in $DEPS - see docs/QUEST.md.
+set -e
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+Q=$ROOT/quest
+SDK=${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}
+NDK=${ANDROID_NDK:-$SDK/ndk/27.3.13750724}
+DEPS=${DEPS:-$ROOT/../deps}
+SDL_SRC=${SDL_SRC:-$DEPS/SDL2-2.32.10}
+[ -n "$JAVA_HOME" ] || [ ! -d /opt/homebrew/opt/openjdk@21 ] || export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+case "$(uname -s)" in Darwin) HOST=darwin-x86_64 ;; *) HOST=linux-x86_64 ;; esac
+GAME=
+if [ "$1" = --with-game ]; then
+    GAME=$2
+    [ -f "$GAME/elf/hod4M.elf" ] || { echo "--with-game needs the game folder (with elf/hod4M.elf in it)"; exit 1; }
+fi
+STRIP=$NDK/toolchains/llvm/prebuilt/$HOST/bin/llvm-strip
+
+cmake -S "$ROOT" -B "$ROOT/build-quest" -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+    -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DCMAKE_BUILD_TYPE=Release \
+    -DSDL2_DIR="$DEPS/sdl2-android/lib/cmake/SDL2" \
+    -DGL4ES_DIR="$DEPS/gl4es" -DGL4ES_LIB="$DEPS/gl4es/lib/libGL.a" \
+    -DOPENAL_DIR="$DEPS/openal-soft" -DOPENAL_LIB="$DEPS/openal-android/libopenal.so" \
+    -DOPENXR_DIR="$DEPS/oxr/prefab/modules/headers" -DOPENXR_LIB="$DEPS/oxr/jni/arm64-v8a/libopenxr_loader.so" >/dev/null
+cmake --build "$ROOT/build-quest" -j"$(getconf _NPROCESSORS_ONLN)"
+
+LIBS=$Q/app/src/main/libs/arm64-v8a
+mkdir -p "$LIBS"
+"$STRIP" --strip-unneeded -o "$LIBS/libmain.so" "$ROOT/build-quest/libmain.so"
+"$STRIP" --strip-unneeded -o "$LIBS/libopenal.so" "$DEPS/openal-android/libopenal.so"
+cp "$DEPS/sdl2-android/lib/libSDL2.so" "$DEPS/oxr/jni/arm64-v8a/libopenxr_loader.so" "$LIBS/"
+rm -rf "$Q/app/src/main/java/org/libsdl"
+cp -R "$SDL_SRC/android-project/app/src/main/java/org/libsdl" "$Q/app/src/main/java/org/"
+echo "sdk.dir=$SDK" > "$Q/local.properties"
+
+# the game, as assets - or none
+ASSETS=$Q/app/src/main/assets
+rm -rf "$ASSETS"
+OUT=$Q/HouseOfTheDead4VR.apk
+if [ -n "$GAME" ]; then
+    mkdir -p "$ASSETS/game"
+    # not this machine's saved cabinet state, key bindings or test output,
+    # nor what Android's packager drops anyway (SourceSafe's vssver.scc and
+    # the like), so the file list matches the APK
+    rsync -a --exclude lindbergh_nvram.bin --exclude lindbergh.ini --exclude env.txt --exclude vr.cfg \
+        --exclude '*.ppm' --exclude '*.pgm' --exclude '*.log' --exclude '.*' \
+        --exclude '*.scc' --exclude '*~' --exclude thumbs.db --exclude picasa.ini --exclude CVS --exclude '_*/' \
+        "$GAME/elf" "$GAME/fs" "$GAME/drv" "$ASSETS/game/"
+    (cd "$ASSETS/game" && find . -type f | sed 's|^\./||' | sort) > "$ASSETS/game.files"
+    (cd "$ASSETS/game" && find . -type f -exec ls -ln {} + | awk '{print $5, $9}' | sort) | shasum | cut -c1-16 > "$ASSETS/game.id"
+    echo "bundling $(wc -l < "$ASSETS/game.files" | tr -d ' ') game files ($(du -sh "$ASSETS/game" | cut -f1))"
+    OUT=$Q/HouseOfTheDead4VR-with-game.apk
+fi
+
+cd "$Q"
+# the hod4M.elf the game's code came from (the app refuses any other), and
+# the version: HOTD4_VERSION (a release tag like v0.2.0) or 0.1.0
+SHA=$(cat "$ROOT/games/hotd4/generated/hod4M.elf.sha256" 2>/dev/null || true)
+VER=${HOTD4_VERSION:-v0.1.0}; VER=${VER#v}
+VCODE=$(echo "$VER" | awk -F. '{print $1*10000 + $2*100 + $3}')
+./gradlew --no-daemon -q assembleRelease -PelfSha256="$SHA" -Photd4VersionName="$VER" -Photd4VersionCode="$VCODE"
+cp app/build/outputs/apk/release/app-release.apk "$OUT"
+rm -rf "$ASSETS"
+ls -la "$OUT"

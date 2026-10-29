@@ -1,4 +1,4 @@
-# The House of the Dead 4 — static recompilation for macOS
+# The House of the Dead 4 — static recompilation for macOS and Meta Quest
 
 The House of the Dead 4 (Sega, 2005, Lindbergh) lifted from its x86 Linux
 executable to C with [lindberghrecomp](https://github.com/lialan/lindberghrecomp),
@@ -30,3 +30,9 @@ cd hotd4-lindbergh-recomp
 
 The Language menu picks English (the default) or Japanese, from the next start.
 `LINDBERGH_MUTE=1` keeps the game silent for a whole run.
+
+## Meta Quest (VR)
+
+Branch `quest-port` builds a standalone Quest 3 app: the world in stereo around
+you, aimed with a controller. Build, install and controls:
+[docs/QUEST.md](docs/QUEST.md).

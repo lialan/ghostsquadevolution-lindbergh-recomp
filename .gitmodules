@@ -1,4 +1,4 @@
 [submodule "lindberghrecomp"]
 	path = lindberghrecomp
 	url = https://github.com/lialan/lindberghrecomp.git
-	branch = hotd4
+	branch = hotd4-quest
