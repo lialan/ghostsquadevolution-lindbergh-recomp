@@ -17,6 +17,25 @@
 
 #include "lindbergh_rt.h"
 
+/* The gun's reload. A House of the Dead 4 gun has an accelerometer, and the
+ * game reloads when it is shaken: GetRawGunAccel(out, player) reads two JVS
+ * analog channels per gun as their distance from centre. A mouse cannot
+ * shake, so while the cabinet's reload input is held (the right button, or
+ * pointing off the window) the accelerometer reports a hard shake that swings
+ * every frame, and at rest it reports none. One gun on a desktop: player 1.
+ * Register arguments: eax = out (two shorts), edx = player. */
+static void h_gun_accel(CPU *c)
+{
+    static unsigned swing[2];
+    uint32_t out = c->eax, player = c->edx & 1;
+    unsigned held = player == 0 && (host_cabinet_buttons() & CAB_P1_RELOAD);
+    uint16_t v = 0;
+    if (held) v = (swing[player]++ & 1) ? 0x7FF0 : 0x0400;
+    else swing[player] = 0;
+    wr16(out, v);
+    wr16(out + 2, v);
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -44,6 +63,8 @@ int main(int argc, char **argv)
      * anything this game needs beyond that gets bound on top, and whatever is
      * still missing aborts naming itself on first call. */
     hle_register_all();
+    if (guest_override("_Z14GetRawGunAccelPti", h_gun_accel))
+        fprintf(stderr, "[hotd4] reload: shake the gun with the reload input\n");
 
     CPU cpu;
     guest_init_cpu(&cpu);
