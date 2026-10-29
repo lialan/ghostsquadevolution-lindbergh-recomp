@@ -3,8 +3,10 @@
 // checks that the player's game files are there and loads the libraries.
 //
 // The game's files (the vsg_l folder) are looked for, as android_main.c does:
-//   /sdcard/Android/data/org.lindbergh.gse.vr/files/vsg_l   (no permission needed)
-//   /sdcard/GhostSquadEvolution/vsg_l                     (needs all-files access)
+//   /sdcard/Android/data/org.lindbergh.gse.vr/files/vsg_l   (where a build with
+//        the game inside unpacks it; adb cannot make folders there)
+//   /sdcard/GhostSquadEvolution/vsg_l    (where players copy it; needs
+//        all-files access, which the app asks for when it finds no game)
 // The release APK holds the game's code translated from one exact vsg
 // executable (R.string.vsg_sha256); any other version would not run, so it
 // is checked here first. Without a usable game the app writes
@@ -65,11 +67,12 @@ public class GhostSquadVR extends SDLActivity {
         }
         String msg = null;
         if (vsg == null) {
-            if (new File(shared, "vsg_l").isDirectory() && !Environment.isExternalStorageManager()) {
-                msg = "Allow Ghost Squad Evolution VR to access all files, then start it again.";
+            if (!Environment.isExternalStorageManager()) {
+                msg = "Allow Ghost Squad Evolution VR to access all files, copy your vsg_l folder to " +
+                      shared + "/vsg_l, then start it again.";
                 askForFileAccess();
             } else {
-                msg = "Game files not found: copy your vsg_l folder to " + own + "/vsg_l";
+                msg = "Game files not found: copy your vsg_l folder to " + shared + "/vsg_l";
             }
         } else {
             String want = getString(R.string.vsg_sha256).trim();
@@ -114,12 +117,11 @@ public class GhostSquadVR extends SDLActivity {
         String text =
             "Ghost Squad Evolution VR needs your own copy of the arcade game.\n\n" +
             "Last start: " + msg + "\n\n" +
-            "Copy the game's whole vsg_l folder (the one with the vsg file in it) into this folder,\n" +
-            "so that this file sits next to it:\n\n" +
-            "    " + own + "/vsg_l/vsg\n\n" +
-            "With the headset connected to a computer by USB (allow file access in the headset),\n" +
-            "it is Internal shared storage > Android > data > org.lindbergh.gse.vr > files.\n" +
-            "SideQuest's file browser or adb push work too.\n\n" +
+            "Copy the game's whole vsg_l folder (the one with the vsg file in it) so that the\n" +
+            "game executable ends up at\n\n" +
+            "    /sdcard/GhostSquadEvolution/vsg_l/vsg\n\n" +
+            "(Internal shared storage > GhostSquadEvolution > vsg_l over USB), and allow the app\n" +
+            "to access all files when it asks.\n\n" +
             "The app needs vsg with SHA-256 " + getString(R.string.vsg_sha256).trim() + "\n";
         try (FileOutputStream out = new FileOutputStream(help)) {
             out.write(text.getBytes("UTF-8"));
