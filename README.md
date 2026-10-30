@@ -14,6 +14,25 @@ own folder under `games/`.
 > Bring your own copy of the game; the build lifts it on your machine. (The
 > Quest release APKs carry a game's code, compiled, but none of its files.)
 
+## Thank you, sp00nznet
+
+This project is a fork of
+[**sp00nznet**](https://github.com/sp00nznet)'s work, and it would not exist
+without it. sp00nznet wrote the
+[Ghost Squad Evolution recompilation](https://github.com/sp00nznet/ghostsquadevolution-lindbergh-recomp)
+this repo grew from, the
+[**lindberghrecomp**](https://github.com/sp00nznet/lindberghrecomp) toolkit
+that lifts the games and stands in for the cabinet, and
+[**pcrecomp**](https://github.com/sp00nznet/pcrecomp), the lifter underneath
+it. Our runtime and lifter are forks of those two
+([lialan/lindberghrecomp](https://github.com/lialan/lindberghrecomp),
+[lialan/pcrecomp](https://github.com/lialan/pcrecomp)); the macOS and Quest
+ports are built on top. Thank you, sp00nznet, for doing the hard part and
+sharing it.
+
+**[Join the sp00nznet recomp Discord](https://discord.gg/CRpzGWZFcu)**, the
+home of sp00nznet's recomp projects.
+
 ## The games
 
 | Game | macOS | Meta Quest (VR) |
@@ -135,12 +154,9 @@ every game whose lifted code is there.
 
 ## Credits and license
 
-Built on [**lindberghrecomp**](https://github.com/sp00nznet/lindberghrecomp)
-and pcrecomp by [sp00nznet](https://github.com/sp00nznet), whose
-[Ghost Squad Evolution project](https://github.com/sp00nznet/ghostsquadevolution-lindbergh-recomp)
-this grew from; the Windows build and its notes are in
+Built on sp00nznet's work; see [Thank you, sp00nznet](#thank-you-sp00nznet).
+Upstream's Windows build and its notes are in
 [docs/ghostsquadevolution/WINDOWS.md](docs/ghostsquadevolution/WINDOWS.md).
-**[Join the sp00nznet recomp Discord](https://discord.gg/CRpzGWZFcu)**
 
 The host and the recompilation toolchain are original work, MIT-licensed.
 **No game data, no disc images, no keys, and no circumvention of anything.**
