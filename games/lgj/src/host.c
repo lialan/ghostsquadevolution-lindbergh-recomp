@@ -95,6 +95,9 @@ static const LgGameProfile k_profile = {
          * constants rather than in GL's matrices (stereo.c). */
         .world_w = 800, .world_h = 600,
         .camera_in_constants = 1,
+        /* It swings its camera round to enemies on the jeep: put that view
+         * in front of the player, wherever they were looking. */
+        .face_swings = 1,
         /* It leaves the world's target for its shadow and reflection
          * targets before the jungle is drawn: the depth is the world's only
          * after the last world draw. */
