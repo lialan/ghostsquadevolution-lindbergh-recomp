@@ -70,7 +70,9 @@ static const LgGameProfile k_profile = {
     .reload_switch = { 1, 0x40 },
     .vr = {
         .title = "The House of the Dead 4 Special VR",
-        .width = 640, .height = 480,
+        /* its path choice tests the gun against 1024x768: at 640x480 a shot
+         * on the right box lands between the two */
+        .width = 1024, .height = 768,
         .scale = 1,
         .depth_read = LG_DEPTH_AUTO,
         .gl_thread = 1,         /* the street: 32-37 fps with the GL on the game's thread, 56-58 without */
