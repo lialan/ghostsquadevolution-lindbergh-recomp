@@ -206,6 +206,11 @@ int SDL_main(int argc, char **argv)
         setenv("LIBGL_PROGRAM_CACHE", cache, 0);
     }
     setenv("LINDBERGH_XR_TITLE", "Let's Go Jungle VR", 0);   /* the settings panel's */
+    /* The world is in about decimetres: the passenger's arms 5 to 7 units
+     * from the eye, the ground below the jeep 35 along a ray 45 degrees down.
+     * A unit taken for a metre showed it ten times too big, and aimed from
+     * a gun a tenth as far from the head as it is. */
+    setenv("LINDBERGH_XR_SCALE", "10", 0);
 
     /* Every guest call is a host call: the game's main thread needs the
      * same deep stack the desktop build links with. */
