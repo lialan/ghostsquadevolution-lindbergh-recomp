@@ -17,8 +17,7 @@
  * adjust, ...) turns the board's raw words into a byte each, 0..255 across
  * the screen, through the stored calibration. A mouse needs no calibration,
  * so this answers from the pointer, as games/hotd4 does. Register arguments:
- * eax = &x, edx = &y. Outside the window the gun is off the screen, which is
- * how this cabinet reloads. */
+ * eax = &x, edx = &y. Outside the window the gun is off the screen. */
 static void h_gun_pos(CPU *c)
 {
     int mx, my, w, h;
@@ -61,6 +60,8 @@ static const LgGameProfile k_profile = {
     .ride_board = "/dev/ttyS0",
     /* its language follows the region in the EEPROM's system data */
     .sysdata_region = 1,
+    /* a shake of the gun (its reload) is the second switch byte's bit 6 */
+    .reload_switch = { 1, 0x40 },
     .vr = {
         .title = "The House of the Dead 4 Special VR",
         .width = 640, .height = 480,
