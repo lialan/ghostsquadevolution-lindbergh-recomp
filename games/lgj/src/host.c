@@ -39,6 +39,10 @@ static void h_analog_adjust(CPU *c)
         for (int i = 0; i < 8; i++) wr16(a + 2u * (uint32_t)i, (uint16_t)(i & 1 ? 0xFFFF : 0));
 }
 
+/* LINDBERGH_GOD=1 (test runs): the player loses no life, so a scripted run
+ * gets through a whole stage instead of to the first continue screen. */
+static void h_no_damage(CPU *c) { (void)c; }
+
 /* Where the sight lands for a gun reading. The game reads the gun as two
  * angles of a gun on a pivot, so the sight's x follows the reading the
  * runtime sends as y, its y follows x the other way round, and both bend
@@ -98,6 +102,9 @@ static const LgGameProfile k_profile = {
         /* It swings its camera round to enemies on the jeep: put that view
          * in front of the player, wherever they were looking. */
         .face_swings = 1,
+        /* and tips it 70 degrees down into the jeep for its bees: the world
+         * stays level, the player looks down at them */
+        .level_horizon = 1,
         /* It leaves the world's target for its shadow and reflection
          * targets before the jungle is drawn: the depth is the world's only
          * after the last world draw. */
@@ -139,6 +146,11 @@ int main(int argc, char **argv)
         uint32_t va = guest_symbol(nm);
         if (va && (g_analog_adjust = dispatch_lifted(va)) && guest_override(nm, h_analog_adjust))
             fprintf(stderr, "[lgj] gun: a blank calibration reads as the whole range\n");
+    }
+    {
+        const char *g = getenv("LINDBERGH_GOD");
+        if (g && *g && *g != '0' && guest_override("_ZN13TEnemyManager13decPlayerLifeEfRKN8_sSerial10_sVector3dE", h_no_damage))
+            fprintf(stderr, "[lgj] the player loses no life (LINDBERGH_GOD)\n");
     }
 
     CPU cpu;
