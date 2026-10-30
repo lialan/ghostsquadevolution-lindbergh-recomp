@@ -65,8 +65,23 @@ STAGE="$(mktemp -d "${TMPDIR:-/tmp}/$ID-lift.XXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT
 GLH="$(xcrun --show-sdk-path)/System/Library/Frameworks/OpenGL.framework/Headers"
 
+BOUNDS_ARG=()
+if [ -n "${STRIPPED:-}" ]; then
+    # A stripped executable lists no functions; find them (minutes, so the
+    # result is kept, keyed by the executable's hash).
+    BOUNDS="$GEN/bounds.txt"
+    SUM="$(shasum -a 256 "$GAME/$ELF" | cut -d' ' -f1)"
+    if [ ! -f "$BOUNDS" ] || [ "$(cat "$GEN/bounds.sha256" 2>/dev/null)" != "$SUM" ]; then
+        say "finding its functions (a few minutes)"
+        mkdir -p "$GEN"
+        ( cd "$TOOLKIT" && "$VPY" -m tools bounds "$GAME/$ELF" "$BOUNDS" --names "$ROOT/games/$ID/names.txt" )
+        echo "$SUM" > "$GEN/bounds.sha256"
+    fi
+    cp "$BOUNDS" "$GEN/bounds.sha256" "$STAGE/"
+    BOUNDS_ARG=(--bounds "$BOUNDS")
+fi
 say "lifting the game"
-( cd "$TOOLKIT" && "$VPY" -m tools recomp "$GAME/$ELF" "$STAGE" )
+( cd "$TOOLKIT" && "$VPY" -m tools recomp "$GAME/$ELF" "$STAGE" ${BOUNDS_ARG[@]+"${BOUNDS_ARG[@]}"} )
 if [ -n "${SOLIBS:-}" ]; then
     say "lifting the libraries it loads"
     # The order (game.conf) fixes where each library lands in guest memory.

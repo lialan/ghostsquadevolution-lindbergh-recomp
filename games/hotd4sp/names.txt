@@ -1,0 +1,36 @@
+# The House of the Dead 4 Special's executable is stripped. These are the
+# functions the runtime finds by name, at their addresses in it (hod4M.elf,
+# SHA-256 b84c70d9...). tools bounds --names applies them.
+0x0835F2A0 amBackupWrapper_KeyEepromRead
+0x0835F2B5 amBackupWrapper_KeyEepromWrite
+0x08360D88 amDipswInit
+0x08360E1D amDipswExit
+0x08360E93 amDipswGetData
+0x08363438 amDongleInit
+0x08364684 amEepromInit
+0x0836483F amEepromRead
+0x0836494F amEepromWrite
+0x08365A0F amJvsCheckInit
+0x08365A3F amJvsGetNodes
+0x08367888 amLibInit
+0x08368F05 amOsinfoGetBaseBoardSerialId
+0x083C644D XF86VidModeQueryVersion
+0x083C6581 XF86VidModeSetClientVersion
+0x083C6B19 XF86VidModeGetAllModeLines
+0x083C82F3 XF86VidModeSetViewPort
+# placed by the arcade library's link order and function sizes against the
+# original game's (they share no bytes or strings with it)
+0x0835F2D0 amBackupWrapper_BbBuSramRead
+0x0835F2E5 amBackupWrapper_BbBuSramWrite
+0x0836361F amDongleExit
+0x083636B2 amDongleUpdate
+0x0836374B amDongleIsAvailable
+0x0836480F amEepromExit
+0x08365514 amJvsInit
+0x08365969 amJvsExit
+0x08365A5F amJvsSendRequest
+0x08365BFA amJvsRecvAcknowledge
+0x08367A36 amLibExit
+0x08367A86 amLibIsBasebdAvailable
+# found through CGunMgr::MainProc, which still prints "x %d" / "y %d"
+0x08179DAC _Z14GetAdjstGunPosPhS_ttP18GunAdjustValueTypei
