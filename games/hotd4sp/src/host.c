@@ -67,6 +67,7 @@ static const LgGameProfile k_profile = {
         .width = 640, .height = 480,
         .scale = 1,
         .depth_read = LG_DEPTH_AUTO,
+        .gl_thread = 1,         /* the street: 32-37 fps with the GL on the game's thread, 56-58 without */
     },
 };
 
