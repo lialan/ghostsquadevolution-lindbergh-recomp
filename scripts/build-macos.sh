@@ -97,6 +97,7 @@ for f in "$STAGE"/*; do
     cmp -s "$f" "$GEN/${f##*/}" || cp "$f" "$GEN/"
 done
 for f in "$GEN"/*; do
+    case "${f##*/}" in *_android.c|*.elf.sha256) continue ;; esac  # the Quest build's, made separately
     [ -e "$STAGE/${f##*/}" ] || rm -f "$f"
 done
 
