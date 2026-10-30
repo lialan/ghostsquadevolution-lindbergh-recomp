@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "game_profile.h"
 #include "lindbergh_rt.h"
 
 /* The gun, at the two functions the game's gun code reads it through. Both
@@ -118,6 +119,28 @@ static void widen_culling(void)
 /* whether the HUD keeps to the screen's edges, or stays a centred 4:3 block */
 static int hud_anchored(void) { return 1; }
 
+/* What the runtime needs to know about this game (game_profile.h). */
+static const LgGameProfile k_profile = {
+    .title = "The House of the Dead 4",
+    /* The monitor the game draws for. 16:9 is the board's 1360x768 mode - its
+     * DIP switches have no 1280x720 one - and the game renders and aims for
+     * 1360x768, so the frame is that size too and the window scales it.
+     * LINDBERGH_WIDTH/HEIGHT pick another mode (1280x768 is the cabinet's). */
+    .width = 1360, .height = 768,
+    /* The gun goes straight to the game (h_gun_pos above), so the cabinet's
+     * raw gun words carry the pointer as is too: no correction. */
+    .aim = { 1, 0, 1, 0 },
+    .vr = {
+        .title = "The House of the Dead 4 VR",
+        /* In the headset the game draws its 640x480 mode, which the
+         * runtime's stereo (stereo.c) scales to each eye; the screen in front
+         * of you is 4:3 and the HUD sits on it as the game lays it out. */
+        .width = 640, .height = 480,
+        .scale = 1,
+        .depth_read = LG_DEPTH_AUTO,
+    },
+};
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -137,22 +160,7 @@ int main(int argc, char **argv)
     if (guest_load(argv[1], argc - 1, argv + 1) != 0)
         return 1;
 
-    /* The monitor the game draws for. 16:9 is the board's 1360x768 mode - its
-     * DIP switches have no 1280x720 one - and the game renders and aims for
-     * 1360x768, so the frame is that size too and the window scales it.
-     * LINDBERGH_WIDTH/HEIGHT pick another mode (1280x768 is the cabinet's). */
-#ifdef __ANDROID__
-    /* In the headset the game draws its 640x480 mode, which the runtime's
-     * stereo (stereo.c) scales to each eye; the screen in front of you is
-     * 4:3 and the HUD sits on it as the game lays it out. */
-    host_window_hint(640, 480);
-#else
-    host_window_hint(1360, 768);
-#endif
-    /* The gun goes straight to the game (h_gun_pos above), so the cabinet's
-     * raw gun words carry the pointer as is too: no correction. */
-    host_aim_default(1, 0, 1, 0);
-    host_window_title("The House of the Dead 4");
+    game_profile_apply(&k_profile);
 
     /* Give the imports bodies. Everything the toolkit ships is bound here;
      * anything this game needs beyond that gets bound on top, and whatever is

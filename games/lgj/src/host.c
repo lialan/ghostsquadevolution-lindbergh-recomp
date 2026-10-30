@@ -16,10 +16,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "game_profile.h"
 #include "lindbergh_rt.h"
-#ifdef __ANDROID__
-#include "stereo.h"
-#endif
 
 
 /* The gun's calibration. Per analog channel (P1 x, y, P2 x, y) the cabinet
@@ -70,6 +68,40 @@ static void gun_map(int *x, int *y)
     *y = interp(k_sx, (int)(sizeof k_sx / sizeof *k_sx), sx);
 }
 
+/* What the runtime needs to know about this game (game_profile.h). */
+static const LgGameProfile k_profile = {
+    .title = "Let's Go Jungle!",
+    /* Lindbergh Yellow ran this game at 1360x768, already 16:9. */
+    .width = 1360, .height = 768,
+    /* The game runs its logic once a frame and left the timing to the
+     * cabinet's vsync: 60 frames a second, whatever the display does. */
+    .pace_fps = 60,
+    /* Its voices play near full scale, a dozen at once in a firefight:
+     * peaks reach three times full scale. 0.4 keeps them at about the
+     * limiter's knee and the attract music at a normal level. */
+    .sound_gain = 0.4f,
+    /* The gun goes through gun_map above; nothing linear on top. */
+    .aim = { 1, 0, 1, 0 },
+    .gun_map = gun_map,
+    .vr = {
+        .title = "Let's Go Jungle VR",
+        /* The world is in about decimetres: the passenger's arms 5 to 7
+         * units from the eye, the ground below the jeep 35 along a ray 45
+         * degrees down. A unit taken for a metre showed it ten times too
+         * big, and aimed from a gun a tenth as far from the head as it is. */
+        .scale = 10,
+        /* The world is drawn into an 800x600 target and tone mapped onto
+         * the screen, and the camera is kept in the vertex programs'
+         * constants rather than in GL's matrices (stereo.c). */
+        .world_w = 800, .world_h = 600,
+        .camera_in_constants = 1,
+        /* It leaves the world's target for its shadow and reflection
+         * targets before the jungle is drawn: the depth is the world's only
+         * after the last world draw. */
+        .depth_read = LG_DEPTH_AUTO,
+    },
+};
+
 int main(int argc, char **argv)
 {
     if (argc < 2) {
@@ -93,26 +125,7 @@ int main(int argc, char **argv)
      * the Cg runtime (hle_cg.c) finds the precompiled shaders. */
     if (!getenv("TEA_DIR")) setenv("TEA_DIR", ".", 1);
 
-    /* Lindbergh Yellow ran this game at 1360x768, already 16:9. */
-    host_window_hint(1360, 768);
-#ifdef __ANDROID__
-    /* In the headset: the game draws its world into an 800x600 target and
-     * tone maps that onto the screen, and keeps its camera in its vertex
-     * programs' constants rather than in GL's matrices (stereo.c). */
-    stereo_picture_size(800, 600);
-    stereo_env_projection(1);
-#endif
-    host_window_title("Let's Go Jungle!");
-    /* The game runs its logic once a frame and left the timing to the
-     * cabinet's vsync: 60 frames a second, whatever the display does. */
-    host_pace_fps(60);
-    /* The gun goes through gun_map below; nothing linear on top. */
-    host_aim_default(1, 0, 1, 0);
-    host_gun_map(gun_map);
-    /* Its voices play near full scale, a dozen at once in a firefight:
-     * peaks reach three times full scale. 0.4 keeps them at about the
-     * limiter's knee and the attract music at a normal level. */
-    segaapi_master_gain(0.4f);
+    game_profile_apply(&k_profile);
 
     /* Give the imports bodies. Everything the toolkit ships is bound here;
      * anything this game needs beyond that gets bound on top, and whatever is

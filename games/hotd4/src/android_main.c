@@ -206,7 +206,6 @@ int SDL_main(int argc, char **argv)
         snprintf(cache, sizeof cache, "%s/shadercache", base);
         setenv("LIBGL_PROGRAM_CACHE", cache, 0);
     }
-    setenv("LINDBERGH_XR_TITLE", "The House of the Dead 4 VR", 0);   /* the settings panel's */
 
     /* Every guest call is a host call: the game's main thread needs the
      * same deep stack the desktop build links with. */
