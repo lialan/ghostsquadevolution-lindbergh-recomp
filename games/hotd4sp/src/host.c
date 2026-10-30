@@ -51,6 +51,12 @@ static void h_key_crypt(CPU *c)
     RET(-5);
 }
 
+/* LINDBERGH_GOD=1: the player takes no damage, for test runs that must reach
+ * a later scene. CPlayer::CanDamagePlayer() - matched against the original
+ * game's, the same code with the player's fields moved - answers no. */
+#define CAN_DAMAGE_PLAYER 0x080c18d4u
+static void h_no_damage(CPU *c) { RET(0); }
+
 /* What the runtime needs to know about this game (game_profile.h). */
 static const LgGameProfile k_profile = {
     .title = "The House of the Dead 4 Special",
@@ -89,6 +95,11 @@ int main(int argc, char **argv)
     game_profile_apply(&k_profile);
     hle_register_all();
     guest_override_va("keychip decrypt", KEY_CRYPT, h_key_crypt);
+    {
+        const char *g = getenv("LINDBERGH_GOD");
+        if (g && *g == '1' && guest_override_va("CPlayer::CanDamagePlayer", CAN_DAMAGE_PLAYER, h_no_damage))
+            fprintf(stderr, "[hotd4sp] the player takes no damage (LINDBERGH_GOD)\n");
+    }
     if (guest_override("_Z14GetAdjstGunPosPhS_ttP18GunAdjustValueTypei", h_gun_pos))
         fprintf(stderr, "[hotd4sp] aim: the gun is where the pointer is\n");
 
