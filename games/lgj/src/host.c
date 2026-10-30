@@ -17,6 +17,9 @@
 #include <stdlib.h>
 
 #include "lindbergh_rt.h"
+#ifdef __ANDROID__
+#include "stereo.h"
+#endif
 
 
 /* The gun's calibration. Per analog channel (P1 x, y, P2 x, y) the cabinet
@@ -92,6 +95,13 @@ int main(int argc, char **argv)
 
     /* Lindbergh Yellow ran this game at 1360x768, already 16:9. */
     host_window_hint(1360, 768);
+#ifdef __ANDROID__
+    /* In the headset: the game draws its world into an 800x600 target and
+     * tone maps that onto the screen, and keeps its camera in its vertex
+     * programs' constants rather than in GL's matrices (stereo.c). */
+    stereo_picture_size(800, 600);
+    stereo_env_projection(1);
+#endif
     host_window_title("Let's Go Jungle!");
     /* The game runs its logic once a frame and left the timing to the
      * cabinet's vsync: 60 frames a second, whatever the display does. */

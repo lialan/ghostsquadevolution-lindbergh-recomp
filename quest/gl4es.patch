@@ -483,10 +483,10 @@ index b0f0299..2daf81c 100644
          if((hardext.npot==1 || hardext.npot==2) && (!tex->actual.wrap_s || !tex->actual.wrap_t || !wrap_npot(tex->actual.wrap_s) || !wrap_npot(tex->actual.wrap_t))) {
 diff --git a/src/gl/multiview.c b/src/gl/multiview.c
 new file mode 100644
-index 0000000..14a8b43
+index 0000000..f812ec3
 --- /dev/null
 +++ b/src/gl/multiview.c
-@@ -0,0 +1,585 @@
+@@ -0,0 +1,611 @@
 +// multiview.c - both eyes of a VR headset in one pass (see multiview.h).
 +//
 +// Shaders: what gl4es makes of every shader is GLSL ES 1.00, and multiview
@@ -714,6 +714,9 @@ index 0000000..14a8b43
 +    "#define textureCubeLodEXT textureLod\n"
 +    "#define texture2DGradEXT textureGrad\n"
 +    "#define texture3D texture\n"
++    // GLSL 1.20's shadow lookups gave a vec4; ES 3.00's give the float
++    "#define shadow2D(s, c) vec4(texture(s, c))\n"
++    "#define shadow2DProj(s, c) vec4(textureProj(s, c))\n"
 +    "#define gl4es_layer float(gl_ViewID_OVR)\n";
 +
 +// extensions ES 3.00 has built in, or that no longer apply
@@ -769,6 +772,7 @@ index 0000000..14a8b43
 +        l += n;
 +    }
 +    put(&o, "precision highp sampler2DArray;\n", -1);
++    if(strstr(t, "sampler2DShadow")) put(&o, "precision highp sampler2DShadow;\n", -1);
 +    if(vertex)
 +        put(&o, "layout(num_views=2) in;\n"
 +                "layout(std140) uniform gl4es_MV { highp mat4 gl4es_mvR[2]; highp mat4 gl4es_mvG; highp vec4 gl4es_mvClip; };\n"
@@ -834,7 +838,9 @@ index 0000000..14a8b43
 +    int unit = act - GL_TEXTURE0;
 +    GLuint prev = mv_bound[unit];
 +    bind_array(unit, a);
-+    mv.TexStorage3D(GL_TEXTURE_2D_ARRAY_, 1, is_depth(tex) ? GL_DEPTH24_STENCIL8_ : GL_RGBA8_, w, h, 2);
++    // a half-float target (an HDR scene) keeps its range in both layers
++    mv.TexStorage3D(GL_TEXTURE_2D_ARRAY_, 1, is_depth(tex) ? GL_DEPTH24_STENCIL8_ :
++                    (tex->type == GL_HALF_FLOAT_OES || tex->type == 0x140B || tex->type == GL_FLOAT) ? 0x881A /* RGBA16F */ : GL_RGBA8_, w, h, 2);
 +    bind_array(unit, prev);
 +    tex->mvarray = a; tex->mv_w = w; tex->mv_h = h;
 +    tex->mv_min = tex->mv_mag = tex->mv_ws = tex->mv_wt = 0;
@@ -862,16 +868,23 @@ index 0000000..14a8b43
 +            mv.BindFramebuffer(GL_READ_FRAMEBUFFER, rd);
 +            mv.BindFramebuffer(GL_DRAW_FRAMEBUFFER, dr);
 +        }
-+        mv.FramebufferTextureLayer(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, t->mvarray, 0, 0);
-+        mv.FramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t->glname, 0);
++        // depth goes as depth and stencil, the format both sides have
++        int depth = mv_copy[i].attachment != GL_COLOR_ATTACHMENT0;
++        GLenum at = depth ? GL_DEPTH_STENCIL_ATTACHMENT : GL_COLOR_ATTACHMENT0;
++        GLenum other = depth ? GL_COLOR_ATTACHMENT0 : GL_DEPTH_STENCIL_ATTACHMENT;
++        mv.FramebufferTexture2D(GL_READ_FRAMEBUFFER, other, GL_TEXTURE_2D, 0, 0);
++        mv.FramebufferTexture2D(GL_DRAW_FRAMEBUFFER, other, GL_TEXTURE_2D, 0, 0);
++        mv.FramebufferTextureLayer(GL_READ_FRAMEBUFFER, at, t->mvarray, 0, 0);
++        mv.FramebufferTexture2D(GL_DRAW_FRAMEBUFFER, at, GL_TEXTURE_2D, t->glname, 0);
 +        GLboolean sc = mv.IsEnabled(GL_SCISSOR_TEST);
 +        if(sc) mv.Disable(GL_SCISSOR_TEST);
-+        mv.BlitFramebuffer(0, 0, t->mv_w, t->mv_h, 0, 0, t->mv_w, t->mv_h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
++        mv.BlitFramebuffer(0, 0, t->mv_w, t->mv_h, 0, 0, t->mv_w, t->mv_h,
++                           depth ? GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT : GL_COLOR_BUFFER_BIT, GL_NEAREST);
 +        if(sc) mv.Enable(GL_SCISSOR_TEST);
 +        if(mv_check) {
 +            static int shown;
 +            GLenum e = mv.GetError();
-+            if(e && shown++ < 10) printf("LIBGL: multiview: copying texture %u (%dx%d) back: error %#x\n", t->texture, t->mv_w, t->mv_h, e);
++            if(e && shown++ < 10) printf("LIBGL: multiview: copying texture %u (%dx%d) back: error %#x (type %#x format %#x internal %#x, %s)\n", t->texture, t->mv_w, t->mv_h, e, t->type, t->format, t->internalformat, depth ? "depth" : "colour");
 +        }
 +    }
 +    if(any) {   // as gl4es had it
@@ -916,8 +929,8 @@ index 0000000..14a8b43
 +int mv_attach(GLenum target, GLenum attachment, gltexture_t* tex, GLuint fb, GLenum textarget)
 +{
 +    if(!gl4es_mv || !tex) return 0;
-+    if(textarget == GL_TEXTURE_2D && attachment != GL_DEPTH_ATTACHMENT && attachment != GL_STENCIL_ATTACHMENT
-+       && attachment != GL_DEPTH_STENCIL_ATTACHMENT) {
++    // depth too: a game samples its scene's depth (fog) and its shadow maps
++    if(textarget == GL_TEXTURE_2D && attachment != GL_STENCIL_ATTACHMENT) {
 +        int k = -1;
 +        for(int i = 0; i < MV_COPIES; i++)
 +            if(mv_copy[i].tex && mv_copy[i].fb == fb && mv_copy[i].attachment == attachment) { k = i; break; }
@@ -929,6 +942,15 @@ index 0000000..14a8b43
 +    if(attachment == GL_DEPTH_ATTACHMENT && is_depth(tex)) attachment = GL_DEPTH_STENCIL_ATTACHMENT;
 +    mv.FramebufferTextureMultiviewOVR(target, attachment, array_for(tex), 0, 0, 2);
 +    return 1;
++}
++
++// A 2D texture drawn into in both views and read back per view: a game's
++// world drawn offscreen and then composited onto the eyes. Programs sample it
++// as a sampler2DArray at the view's layer; its array is bound on the unit.
++void gl4es_multiview_layered(GLuint texture)
++{
++    gltexture_t* tex = gl4es_getTexture(GL_TEXTURE_2D, texture);
++    if(tex) tex->mv_layered = 1;
 +}
 +
 +GLuint gl4es_multiview_array(GLuint texture)
@@ -965,6 +987,10 @@ index 0000000..14a8b43
 +    int n = hardext.maxtex < MV_UNITS ? hardext.maxtex : MV_UNITS;
 +    for(int u = 0; u < n; u++) {
 +        gltexture_t* tex = glstate->texture.bound[u][ENABLED_TEXTURE_RECTANGLE];
++        if(!(tex && tex->mvarray)) {     // else a layered 2D target on the unit
++            gltexture_t* t2 = glstate->texture.bound[u][ENABLED_TEX2D];
++            if(t2 && t2->mv_layered && t2->mvarray) tex = t2;
++        }
 +        GLuint a = tex ? tex->mvarray : 0;
 +        GLuint had = mv_bound[u];
 +        if(mv_bound[u] != a) bind_array(u, a);
@@ -1074,10 +1100,10 @@ index 0000000..14a8b43
 +double gl4es_bufprof_copy, gl4es_bufprof_bytes;
 diff --git a/src/gl/multiview.h b/src/gl/multiview.h
 new file mode 100644
-index 0000000..5196372
+index 0000000..68a8e70
 --- /dev/null
 +++ b/src/gl/multiview.h
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,47 @@
 +#ifndef _GL4ES_MULTIVIEW_H_
 +#define _GL4ES_MULTIVIEW_H_
 +
@@ -1105,6 +1131,7 @@ index 0000000..5196372
 +void gl4es_multiview_set(const float m[3][16], int clip);
 +// a rectangle texture's two-layer array, as the driver knows it (0: none)
 +GLuint gl4es_multiview_array(GLuint texture);
++void gl4es_multiview_layered(GLuint texture);   // a 2D render target sampled per view
 +// one layer of a texture's array as w*h RGBA bytes, for finding what goes wrong
 +int gl4es_multiview_read(GLuint texture, GLenum target, int layer, void* out);
 +// a region of one view's layer of a rectangle texture, scaled into a 2D texture
@@ -1331,7 +1358,7 @@ index 3d0f46b..fda13cf 100644
        int change_textmat = notexarray;
        if(!change_textmat) {
 diff --git a/src/gl/texture.c b/src/gl/texture.c
-index c0d479a..49d3f3a 100644
+index c0d479a..07c7905 100644
 --- a/src/gl/texture.c
 +++ b/src/gl/texture.c
 @@ -1,4 +1,5 @@
@@ -1340,7 +1367,46 @@ index c0d479a..49d3f3a 100644
  
  #include "../glx/hardext.h"
  #include "../glx/streaming.h"
-@@ -1428,6 +1429,8 @@ void APIENTRY_GL4ES gl4es_glTexImage2D(GLenum target, GLint level, GLint interna
+@@ -903,6 +904,24 @@ GLenum minmag_float(GLenum filt) {
+     }
+ }
+ 
++// On an ES 3 context (multiview) a half-float texture drawn into needs its
++// sized format: unsized RGBA with HALF_FLOAT_OES is not colour-renderable
++static void es3_sized(GLenum* ifmt, GLenum* fmt, GLenum* type)
++{
++    GLenum format = *fmt;
++    // a depth texture drawn into is copied back from its array, which is
++    // depth and stencil: the same format, as the copy needs
++    if(gl4es_mv && format == GL_DEPTH_COMPONENT) {
++        *ifmt = GL_DEPTH24_STENCIL8; *fmt = GL_DEPTH_STENCIL; *type = GL_UNSIGNED_INT_24_8;
++        return;
++    }
++    if(!gl4es_mv || *type != GL_HALF_FLOAT_OES) return;
++    if(format == GL_RGBA) *ifmt = 0x881A;           // GL_RGBA16F
++    else if(format == GL_RGB) *ifmt = 0x881B;       // GL_RGB16F
++    else return;
++    *type = 0x140B;                                 // GL_HALF_FLOAT
++}
++
+ void APIENTRY_GL4ES gl4es_glTexImage2D(GLenum target, GLint level, GLint internalformat,
+                   GLsizei width, GLsizei height, GLint border,
+                   GLenum format, GLenum type, const GLvoid *data) {
+@@ -1418,16 +1437,20 @@ void APIENTRY_GL4ES gl4es_glTexImage2D(GLenum target, GLint level, GLint interna
+                 }
+             }
+             
++            GLenum sized = format, sfmt = format, stype = type;
++            es3_sized(&sized, &sfmt, &stype);
+             if (height != nheight || width != nwidth) {
+                 errorGL();
+-                gles_glTexImage2D(rtarget, level, format, nwidth, nheight, border,
+-                                format, type, NULL);
++                gles_glTexImage2D(rtarget, level, sized, nwidth, nheight, border,
++                                sfmt, stype, NULL);
+                 DBG(CheckGLError(1);)
+                 if (pixels) {
+                     gles_glTexSubImage2D(rtarget, level, 0, 0, width, height,
                                          format, type, pixels);
                                          DBG(CheckGLError(1);)
                  }
@@ -1349,16 +1415,21 @@ index c0d479a..49d3f3a 100644
  #ifdef NO_1x1
                  if(level==0 && (width==1 && height==1 && pixels)) {
                      // complete the texture, juste in case it use GL_REPEAT
-@@ -1445,6 +1448,8 @@ void APIENTRY_GL4ES gl4es_glTexImage2D(GLenum target, GLint level, GLint interna
-                 gles_glTexImage2D(rtarget, level, format, width, height, border,
-                                 format, type, pixels);
+@@ -1442,9 +1465,11 @@ void APIENTRY_GL4ES gl4es_glTexImage2D(GLenum target, GLint level, GLint interna
+ #endif
+             } else {
+                 errorGL();
+-                gles_glTexImage2D(rtarget, level, format, width, height, border,
+-                                format, type, pixels);
++                gles_glTexImage2D(rtarget, level, sized, width, height, border,
++                                sfmt, stype, sfmt == format ? pixels : NULL);
                  DBG(CheckGLError(1);)
 +                if(gl4es_mv && target==GL_TEXTURE_RECTANGLE_ARB && level==0)
 +                    mv_upload(bound, 0, 0, width, height, format, type, pixels, 1);
              }
              // check if base_level is set... and calculate lower level mipmap
              if(bound->base_level == level && !(bound->max_level==level && level==0)) {
-@@ -1705,6 +1710,8 @@ void APIENTRY_GL4ES gl4es_glTexSubImage2D(GLenum target, GLint level, GLint xoff
+@@ -1705,6 +1730,8 @@ void APIENTRY_GL4ES gl4es_glTexSubImage2D(GLenum target, GLint level, GLint xoff
          gles_glTexSubImage2D(rtarget, level, xoffset, yoffset,
                       width, height, format, type, pixels);
          DBG(CheckGLError(1);)
@@ -1368,16 +1439,17 @@ index c0d479a..49d3f3a 100644
          if(bound->base_level == level && !(bound->max_level==level && level==0)) {
              int leveln = level, nw = width, nh = height, xx=xoffset, yy=yoffset;
 diff --git a/src/gl/texture.h b/src/gl/texture.h
-index 33e140a..0c0e243 100644
+index 33e140a..19830b9 100644
 --- a/src/gl/texture.h
 +++ b/src/gl/texture.h
-@@ -156,6 +156,10 @@ typedef struct {
+@@ -156,6 +156,11 @@ typedef struct {
      glsampler_t sampler;    // internal sampler if not superseded by glBindSampler
      glsampler_t actual;     // actual sampler
      float fbtex_ratio; // Lower rendering resolution
 +    GLuint mvarray;     // multiview.c: a rectangle texture's two-layer array
 +    int mv_w, mv_h;
 +    GLenum mv_min, mv_mag, mv_ws, mv_wt;    // its filters and wraps as set
++    int mv_layered;     // multiview.c: a 2D texture drawn into, sampled by layer too
 +    int native_levels;  // DXT given to the driver as it is: mip levels so far
  } gltexture_t;
  
