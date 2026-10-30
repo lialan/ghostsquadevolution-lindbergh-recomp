@@ -22,4 +22,8 @@ GAME="$(find_game "$2")"
 [ -n "$GAME" ] || die "no $ELF in $2 (expected $TITLE's folder, $FOLDER_HINT)"
 
 cd "$GAME/$(dirname "$ELF")"
-exec "$BIN" "$(basename "$ELF")" "${@:3}"
+# macOS names a program without an app bundle after its file, in the menu
+# bar and the Dock: start it through a link with the game's name
+LINK="$ROOT/build-mac/$TITLE"
+[ "$(readlink "$LINK" 2>/dev/null)" = "$ID" ] || ln -sfn "$ID" "$LINK"
+exec "$LINK" "$(basename "$ELF")" "${@:3}"

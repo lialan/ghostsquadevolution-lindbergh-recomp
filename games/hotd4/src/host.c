@@ -152,6 +152,7 @@ int main(int argc, char **argv)
     /* The gun goes straight to the game (h_gun_pos above), so the cabinet's
      * raw gun words carry the pointer as is too: no correction. */
     host_aim_default(1, 0, 1, 0);
+    host_window_title("The House of the Dead 4");
 
     /* Give the imports bodies. Everything the toolkit ships is bound here;
      * anything this game needs beyond that gets bound on top, and whatever is
