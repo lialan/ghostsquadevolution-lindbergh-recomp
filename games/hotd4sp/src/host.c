@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "xr_overlay.h"
 #include "game_profile.h"
 #include "lindbergh_rt.h"
 #include "stereo.h"
@@ -134,6 +135,7 @@ static const LgGameProfile k_profile = {
     /* a shake of the gun (its reload) is the second switch byte's bit 6 */
     .reload_switch = { 1, 0x40 },
     .vr = {
+        .gun_model = XO_GUN_TP9,    /* a B&T TP9 in the player's hand */
         .title = "The House of the Dead 4 Special VR",
         /* its path choice tests the gun against 1024x768: at 640x480 a shot
          * on the right box lands between the two */

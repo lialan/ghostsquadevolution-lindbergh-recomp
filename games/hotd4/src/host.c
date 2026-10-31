@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "xr_overlay.h"
 #include "game_profile.h"
 #include "lindbergh_rt.h"
 
@@ -131,6 +132,7 @@ static const LgGameProfile k_profile = {
      * raw gun words carry the pointer as is too: no correction. */
     .aim = { 1, 0, 1, 0 },
     .vr = {
+        .gun_model = XO_GUN_TP9,    /* a B&T TP9 in the player's hand */
         .title = "The House of the Dead 4 VR",
         /* In the headset the game draws its 640x480 mode, which the
          * runtime's stereo (stereo.c) scales to each eye; the screen in front
