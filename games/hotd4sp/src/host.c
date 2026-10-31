@@ -6,12 +6,14 @@
  * runtime looks up. Everything else works as games/hotd4/src/host.c does.
  */
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "game_profile.h"
 #include "lindbergh_rt.h"
+#include "stereo.h"
 
 /* The gun, where the game reads it: GetAdjstGunPos(&x, &y, rawx, rawy,
  * adjust, ...) turns the board's raw words into a byte each, 0..255 across
@@ -56,6 +58,61 @@ static void h_key_crypt(CPU *c)
  * game's, the same code with the player's fields moved - answers no. */
 #define CAN_DAMAGE_PLAYER 0x080c18d4u
 static void h_no_damage(CPU *c) { RET(0); }
+
+/* In the headset the shot leaves the gun, not the head. The game aims its
+ * shot along a ray from its camera through the gun's point on the screen -
+ * CPlayer::GetTarget(), matched against the original game's, fills the
+ * player's ray: the camera's position (this+0x274) and the direction in the
+ * world (+0x284) and the camera's space (+0x294). Player 1's is put on the
+ * gun's own ray, turned into the world by the game's camera, so the shot -
+ * and the splash where it lands - follows the laser at every distance. */
+#define GET_TARGET        0x0806a306u
+#define GET_CAM_MATRIX    0x0818ddc0u   /* CamCtrlMgr_GetCamMatrix(KfMatrixNNGL *) - eax */
+#define MATRIX_NO_MOVE    0x082f4640u   /* KfUnitMatrixTranslation(KfMatrixNNGL *) */
+#define INVERT_MATRIX     0x0833305cu   /* nnInvertMatrix(out, in) */
+#define CALC_POINT        0x082f4e0au   /* KfCalcPoint(out, matrix, in) */
+void L_0806A306(CPU *c);
+static uint32_t g_shot_buf;             /* guest memory: a matrix and two vectors */
+static void h_get_target(CPU *c)
+{
+    uint32_t ret = rd32(c->esp - 4);          /* dispatch took the return address off */
+    uint32_t self = c->eax;
+    push32(c, ret);
+    L_0806A306(c);
+    uint32_t ok = c->eax;
+    float go[3], gd[3];
+    uint32_t pos = A32(3), dir = A32(4), cdir = A32(7);
+    if (!ok || !pos || !dir || rd8(self + 0x34) != 0 || !stereo_gun_ray(go, gd)) { c->eax = ok; return; }
+    if (!g_shot_buf) g_shot_buf = H2G(guest_alloc(64 + 32, 16));
+    uint32_t m = g_shot_buf, vin = m + 64, vout = m + 80;
+    /* the camera's turn into the world, as GetTarget makes it */
+    c->eax = m;
+    if (!guest_call(c, GET_CAM_MATRIX, NULL, 0)) { c->eax = ok; return; }
+    { uint32_t a[1] = { m }; guest_call(c, MATRIX_NO_MOVE, a, 1); }
+    { uint32_t a[2] = { m, m }; guest_call(c, INVERT_MATRIX, a, 2); }
+    float n = sqrtf(gd[0] * gd[0] + gd[1] * gd[1] + gd[2] * gd[2]);
+    if (!(n > 0)) { c->eax = ok; return; }
+    for (int i = 0; i < 3; i++) gd[i] /= n;
+    float wo[3], wd[3];
+    const float *in[2] = { go, gd };
+    float *out[2] = { wo, wd };
+    for (int k = 0; k < 2; k++) {
+        float *v = (float *)GP(vin);
+        v[0] = in[k][0]; v[1] = in[k][1]; v[2] = in[k][2]; v[3] = 1;
+        uint32_t a[3] = { vout, m, vin };
+        guest_call(c, CALC_POINT, a, 3);
+        memcpy(out[k], GP(vout), 12);
+    }
+    float *p = (float *)GP(pos), *d = (float *)GP(dir);
+    for (int i = 0; i < 3; i++) { p[i] += wo[i]; d[i] = wd[i]; }
+    if (cdir) { float *cd = (float *)GP(cdir); cd[0] = gd[0]; cd[1] = gd[1]; cd[2] = gd[2]; }
+    static int log = -1;
+    if (log < 0) { const char *v = getenv("LINDBERGH_AIM_LOG"); log = v && *v == '1'; }
+    if (log) { static unsigned k; if (++k % 60 == 1)
+        fprintf(stderr, "[hotd4sp] shot from the gun: camera-space o %.2f %.2f %.2f d %.3f %.3f %.3f -> world d %.3f %.3f %.3f\n",
+                go[0], go[1], go[2], gd[0], gd[1], gd[2], wd[0], wd[1], wd[2]); }
+    c->eax = ok;
+}
 
 /* What the runtime needs to know about this game (game_profile.h). */
 static const LgGameProfile k_profile = {
@@ -106,6 +163,13 @@ int main(int argc, char **argv)
         if (g && *g == '1' && guest_override_va("CPlayer::CanDamagePlayer", CAN_DAMAGE_PLAYER, h_no_damage))
             fprintf(stderr, "[hotd4sp] the player takes no damage (LINDBERGH_GOD)\n");
     }
+#ifdef __ANDROID__
+    {
+        const char *v = getenv("LINDBERGH_SHOT_FROM_GUN");      /* =0: from the head, as the game has it */
+        if (!(v && *v == '0') && guest_override_va("CPlayer::GetTarget", GET_TARGET, h_get_target))
+            fprintf(stderr, "[hotd4sp] the shot leaves the gun\n");
+    }
+#endif
     if (guest_override("_Z14GetAdjstGunPosPhS_ttP18GunAdjustValueTypei", h_gun_pos))
         fprintf(stderr, "[hotd4sp] aim: the gun is where the pointer is\n");
 
