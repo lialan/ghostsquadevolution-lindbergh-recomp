@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "xr_overlay.h"
 #include "game_profile.h"
 #include "lindbergh_rt.h"
 
@@ -29,6 +30,7 @@ static const LgGameProfile k_profile = {
     .desktop_wide = 1,
     .cull_fov = 62,
     .vr = {
+        .gun_model = XO_GUN_GHOST_SQUAD,  /* the cabinet's own gun in the player's hand */
         .title = "Ghost Squad Evolution VR",
         .scale = 1,
         /* Its full-screen passes after the world write a flat depth into
