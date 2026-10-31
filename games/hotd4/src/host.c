@@ -140,6 +140,9 @@ static const LgGameProfile k_profile = {
         .width = 640, .height = 480,
         .scale = 1,
         .depth_read = LG_DEPTH_AUTO,
+        /* GL on its own thread: in play the game thread is the limit (85-100%
+         * of a core, the GPU 40-60% busy), a third of it the GL calls */
+        .gl_thread = 1,
     },
 };
 

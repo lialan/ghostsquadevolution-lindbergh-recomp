@@ -1163,6 +1163,23 @@ index 39aa58a..04897f5 100644
      if (!old->shader->converted) {
          DBG(printf("Error with GLSL->GLSL:ES conversion\n");)
          errorShim(GL_INVALID_OPERATION);
+diff --git a/src/gl/preproc.c b/src/gl/preproc.c
+index 5b8e8b0..6a6ee0b 100644
+--- a/src/gl/preproc.c
++++ b/src/gl/preproc.c
+@@ -802,10 +802,10 @@ char* preproc(const char* code, int keepcomments, int gl_es, extensions_t* exts,
+                     }
+                     int l = strlen(tok.str);
+                     if(sz+l>=cap) {
+-                        cap+=2000;
++                        cap+=cap/2+2000;
+                         ncode = (char*)realloc(ncode, cap);
+                     }
+-                    strcat(ncode, tok.str);
++                    memcpy(ncode+sz-1, tok.str, l+1);   // at the known end (sz counts the 0): strcat rescanned it every token
+                     sz+=l;
+                 }
+         }
 diff --git a/src/gl/program.c b/src/gl/program.c
 index 2eaeb02..a50ad03 100644
 --- a/src/gl/program.c
@@ -1357,6 +1374,31 @@ index 3d0f46b..fda13cf 100644
        // change gl_TextureMatrix[X] to gl_TextureMatrix_X if possible
        int change_textmat = notexarray;
        if(!change_textmat) {
+diff --git a/src/gl/string_utils.c b/src/gl/string_utils.c
+index fb04824..c58fa64 100644
+--- a/src/gl/string_utils.c
++++ b/src/gl/string_utils.c
+@@ -137,9 +137,17 @@ char* gl4es_resize_if_needed(char* pBuffer, int *size, int addsize) {
+ }
+ 
+ char* gl4es_append(char* pBuffer, int* size, const char* S) {
+-    char* p =pBuffer;
+-    p = gl4es_resize_if_needed(pBuffer, size, strlen(S));
+-    strcat(p, S);
++    // the buffer's end found once, the text copied there, and room grown by
++    // half again: a shader built from hundreds of appends was quadratic
++    // (strlen and strcat each scanned it all, and it grew 100 bytes a time)
++    char* p = pBuffer;
++    int l = strlen(p), add = strlen(S);
++    if(l+add+1 > *size) {
++        int newsize = (l+add+1) + (l+add+1)/2 + 100;
++        p = (char*)realloc(pBuffer, newsize);
++        *size = newsize;
++    }
++    memcpy(p+l, S, add+1);
+     return p;
+ }
+ 
 diff --git a/src/gl/texture.c b/src/gl/texture.c
 index c0d479a..07c7905 100644
 --- a/src/gl/texture.c
