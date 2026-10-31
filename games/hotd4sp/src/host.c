@@ -82,7 +82,15 @@ static void h_get_target(CPU *c)
     uint32_t ok = c->eax;
     float go[3], gd[3];
     uint32_t pos = A32(3), dir = A32(4), cdir = A32(7);
-    if (!ok || !pos || !dir || rd8(self + 0x34) != 0 || !stereo_gun_ray(go, gd)) { c->eax = ok; return; }
+    int have = stereo_gun_ray(go, gd);
+    {   /* LINDBERGH_TEST_RAY=ox,oy,oz,dx,dy,dz: a fixed ray, camera space (testing off the headset) */
+        const char *t = getenv("LINDBERGH_TEST_RAY");
+        if (t && sscanf(t, "%f,%f,%f,%f,%f,%f", &go[0], &go[1], &go[2], &gd[0], &gd[1], &gd[2]) == 6) have = 1;
+    }
+    static int dbg = -1;
+    if (dbg < 0) dbg = getenv("LINDBERGH_AIM_LOG") != NULL;
+    if (dbg) { static unsigned k; if (++k % 120 == 1) fprintf(stderr, "[hotd4sp] GetTarget: player %u, ok %u, ray %d\n", rd8(self + 0x34), ok, have); }
+    if (!ok || !pos || !dir || rd8(self + 0x34) != 0 || !have) { c->eax = ok; return; }
     if (!g_shot_buf) g_shot_buf = H2G(guest_alloc(64 + 32, 16));
     uint32_t m = g_shot_buf, vin = m + 64, vout = m + 80;
     /* the camera's turn into the world, as GetTarget makes it */
@@ -163,13 +171,16 @@ int main(int argc, char **argv)
         if (g && *g == '1' && guest_override_va("CPlayer::CanDamagePlayer", CAN_DAMAGE_PLAYER, h_no_damage))
             fprintf(stderr, "[hotd4sp] the player takes no damage (LINDBERGH_GOD)\n");
     }
+    {   /* the headset's; LINDBERGH_SHOT_FROM_GUN=0 from the head, as the game has it, =1 off it too */
+        const char *v = getenv("LINDBERGH_SHOT_FROM_GUN");
 #ifdef __ANDROID__
-    {
-        const char *v = getenv("LINDBERGH_SHOT_FROM_GUN");      /* =0: from the head, as the game has it */
-        if (!(v && *v == '0') && guest_override_va("CPlayer::GetTarget", GET_TARGET, h_get_target))
+        int on = !(v && *v == '0');
+#else
+        int on = v && *v == '1';
+#endif
+        if (on && guest_override_va("CPlayer::GetTarget", GET_TARGET, h_get_target))
             fprintf(stderr, "[hotd4sp] the shot leaves the gun\n");
     }
-#endif
     if (guest_override("_Z14GetAdjstGunPosPhS_ttP18GunAdjustValueTypei", h_gun_pos))
         fprintf(stderr, "[hotd4sp] aim: the gun is where the pointer is\n");
 
