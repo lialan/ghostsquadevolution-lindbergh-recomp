@@ -74,7 +74,7 @@ index 142223b..90ae5b1 100644
          clientisenabled(GL_VERTEX_ARRAY, vertexattrib[ATT_VERTEX].enabled);
          clientisenabled(GL_NORMAL_ARRAY, vertexattrib[ATT_NORMAL].enabled);
 diff --git a/src/gl/fpe.c b/src/gl/fpe.c
-index c21bcf1..6fadd81 100644
+index c21bcf1..17da267 100644
 --- a/src/gl/fpe.c
 +++ b/src/gl/fpe.c
 @@ -1,8 +1,13 @@
@@ -91,7 +91,7 @@ index c21bcf1..6fadd81 100644
  #include "glcase.h"
  #include "init.h"
  #include "loader.h"
-@@ -382,6 +387,121 @@ void APIENTRY_GL4ES fpe_oldprogram(fpe_state_t* state) {
+@@ -382,6 +387,155 @@ void APIENTRY_GL4ES fpe_oldprogram(fpe_state_t* state) {
      DBG(printf("Created program %d, with vertex=%d (old=%d) fragment=%d (old=%d), alpha=%d/%d\n", glstate->fpe->prog, glstate->fpe->vert, state->vertex_prg_id, glstate->fpe->frag, state->fragment_prg_id, state->alphatest, state->alphafunc);)
  }
  
@@ -100,7 +100,7 @@ index c21bcf1..6fadd81 100644
 +// driver binary, named by a hash of its two shaders' sources, its attribute
 +// bindings and the driver's name and version, and loaded from there the next
 +// time instead of compiled and linked (which can take a mobile driver 100 ms).
-+static const char* prgcache_dir(void)
++const char* gl4es_prgcache_dir(void)
 +{
 +    static int inited = 0;
 +    static char dir[512];
@@ -118,7 +118,7 @@ index c21bcf1..6fadd81 100644
 +}
 +static int prgcache_path(char* out, size_t n, GLuint vert, GLuint frag, program_t* attribs)
 +{
-+    const char* dir = prgcache_dir();
++    const char* dir = gl4es_prgcache_dir();
 +    shader_t *v = getShader(vert), *f = getShader(frag);
 +    if(!dir || !v || !f || !v->source || !f->source) return 0;
 +    static uint64_t drv = 0;
@@ -147,7 +147,7 @@ index c21bcf1..6fadd81 100644
 +    snprintf(out, n, "%s/f%016llx.bin", dir, (unsigned long long)h);
 +    return 1;
 +}
-+static int prgcache_load(GLuint prog, const char* path)
++int gl4es_prgcache_load(GLuint prog, const char* path)
 +{
 +    FILE* fl = fopen(path, "rb");
 +    if(!fl) return 0;
@@ -162,7 +162,7 @@ index c21bcf1..6fadd81 100644
 +    free(data);
 +    return ok;
 +}
-+static void prgcache_save(GLuint prog, const char* path)
++void gl4es_prgcache_save(GLuint prog, const char* path)
 +{
 +    int len = 0; GLenum fmt = 0; void* data = NULL;
 +    if(!gl4es_getProgramBinary(prog, &len, &fmt, &data) || len<=0) { free(data); return; }
@@ -175,6 +175,40 @@ index c21bcf1..6fadd81 100644
 +    }
 +    free(data);
 +}
++// The key of any program about to be linked (gl4es_glLinkProgram): its
++// attached shaders' final sources in order, its attribute bindings, and the
++// driver - as prgcache_path, for the game's own GLSL programs.
++int gl4es_app_prgcache_path(char* out, size_t n, program_t* glprogram)
++{
++    const char* dir = gl4es_prgcache_dir();
++    if(!dir || !glprogram || !glprogram->attach_size) return 0;
++    LOAD_GLES(glGetString);
++    const char* r = (const char*)gles_glGetString(GL_RENDERER);
++    const char* ver = (const char*)gles_glGetString(GL_VERSION);
++    uint64_t h = prgcache_hash(1469598103934665603ull, r?r:"", r?strlen(r):0);
++    h = prgcache_hash(h, ver?ver:"", ver?strlen(ver):0);
++    h = prgcache_hash(h, "gl4es app 1", 11);
++    if(gl4es_mv_shaders) h = prgcache_hash(h, "multiview 9", 11);
++    if(gl4es_mv_shaders && getenv("LIBGL_MV_NOCLIP")) h = prgcache_hash(h, "noclip", 6);
++    for(int i=0; i<glprogram->attach_size; i++) {
++        shader_t* sh = getShader(glprogram->attach[i]);
++        if(!sh) return 0;
++        const char* src = sh->converted ? sh->converted : sh->source;
++        if(!src) return 0;
++        h = prgcache_hash(h, (const char*)&sh->type, sizeof(sh->type));
++        h = prgcache_hash(h, src, strlen(src));
++    }
++    if(glprogram->attribloc) {
++        attribloc_t *al;
++        kh_foreach_value(glprogram->attribloc, al,
++            h = prgcache_hash(h, (const char*)&al->index, sizeof(al->index));
++            h = prgcache_hash(h, al->name, strlen(al->name));
++        );
++    }
++    snprintf(out, n, "%s/a%016llx.bin", dir, (unsigned long long)h);
++    return 1;
++}
++
 +// Compile and link prog from its two attached shaders, whose sources are set -
 +// or load it from the cache. Returns the link status; what is the program for
 +// the messages.
@@ -183,7 +217,7 @@ index c21bcf1..6fadd81 100644
 +    char path[600];
 +    int cached = prgcache_path(path, sizeof(path), vert, frag, attribs);
 +    extern unsigned gl4es_stat_fpe_hits, gl4es_stat_fpe_built;
-+    if(cached && prgcache_load(prog, path)) { gl4es_stat_fpe_hits++; return 1; }
++    if(cached && gl4es_prgcache_load(prog, path)) { gl4es_stat_fpe_hits++; return 1; }
 +    gl4es_stat_fpe_built++;
 +    GLint status;
 +    GLuint sh[2] = {vert, frag};
@@ -206,14 +240,14 @@ index c21bcf1..6fadd81 100644
 +        printf("LIBGL: %s link failed: %s\n", what, buff);
 +        return 0;
 +    }
-+    if(cached) prgcache_save(prog, path);
++    if(cached) gl4es_prgcache_save(prog, path);
 +    return 1;
 +}
 +
  // ********* Shader stuffs handling *********
  void APIENTRY_GL4ES fpe_program(int ispoint) {
      glstate->fpe_state->point = ispoint;
-@@ -399,48 +519,15 @@ void APIENTRY_GL4ES fpe_program(int ispoint) {
+@@ -399,48 +553,15 @@ void APIENTRY_GL4ES fpe_program(int ispoint) {
              if(state.vertex_prg_id || state.fragment_prg_id) {
                  fpe_oldprogram(&state);
              } else {
@@ -263,7 +297,7 @@ index c21bcf1..6fadd81 100644
                  fpe_AddProgramPSA(glstate->fpe->prog, &state);
              }
          }
-@@ -466,24 +553,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
+@@ -466,24 +587,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
          GLint status;
          fpe->vert = gl4es_glCreateShader(GL_VERTEX_SHADER);
          gl4es_glShaderSource(fpe->vert, 1, fpe_CustomVertexShader(glprogram->last_vert->source, state, 0), NULL);
@@ -288,7 +322,7 @@ index c21bcf1..6fadd81 100644
          fpe->prog = gl4es_glCreateProgram();
          gl4es_glAttachShader(fpe->prog, fpe->vert);
          gl4es_glAttachShader(fpe->prog, fpe->frag);
-@@ -495,14 +566,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
+@@ -495,14 +600,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
                  gles_glBindAttribLocation(fpe->prog, al->index, al->name);
              );
          }
@@ -304,7 +338,7 @@ index c21bcf1..6fadd81 100644
          // now find the program
          khint_t k_program;
          {
-@@ -543,24 +608,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
+@@ -543,24 +642,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
          GLint status;
          fpe->vert = gl4es_glCreateShader(GL_VERTEX_SHADER);
          gl4es_glShaderSource(fpe->vert, 1, fpe_VertexShader(glprogram->default_need, state_vertex), NULL);
@@ -329,7 +363,7 @@ index c21bcf1..6fadd81 100644
          fpe->prog = gl4es_glCreateProgram();
          gl4es_glAttachShader(fpe->prog, fpe->vert);
          gl4es_glAttachShader(fpe->prog, fpe->frag);
-@@ -572,14 +621,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
+@@ -572,14 +655,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
                  gles_glBindAttribLocation(fpe->prog, al->index, al->name);
              );
          }
@@ -345,7 +379,7 @@ index c21bcf1..6fadd81 100644
          // now find the program
          khint_t k_program;
          {
-@@ -621,14 +664,23 @@ void APIENTRY_GL4ES fpe_SyncUniforms(uniformcache_t *cache, program_t* glprogram
+@@ -621,14 +698,23 @@ void APIENTRY_GL4ES fpe_SyncUniforms(uniformcache_t *cache, program_t* glprogram
      kh_foreach(uniforms, k, m,
          if(m->parent_size) {
              DBG(++cnt;)
@@ -370,7 +404,7 @@ index c21bcf1..6fadd81 100644
                  case GL_SAMPLER_CUBE:
                  case GL_INT:
                  case GL_INT_VEC2:
-@@ -826,7 +878,9 @@ void APIENTRY_GL4ES fpe_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
+@@ -826,7 +912,9 @@ void APIENTRY_GL4ES fpe_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
  void APIENTRY_GL4ES fpe_glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices) {
      DBG(printf("fpe_glDrawElements(%s, %d, %s, %p), program=%d, instanceID=%u\n", PrintEnum(mode), count, PrintEnum(type), indices, glstate->glsl->program, glstate->instanceID);)
      scratch_t scratch = {0};
@@ -380,7 +414,7 @@ index c21bcf1..6fadd81 100644
      LOAD_GLES(glDrawElements);
      int use_vbo = 0;
      if(glstate->vao->elements && glstate->vao->elements->real_buffer && indices>=glstate->vao->elements->data && indices<=((void*)((char*)glstate->vao->elements->data+glstate->vao->elements->size))) {
-@@ -836,7 +890,9 @@ void APIENTRY_GL4ES fpe_glDrawElements(GLenum mode, GLsizei count, GLenum type,
+@@ -836,7 +924,9 @@ void APIENTRY_GL4ES fpe_glDrawElements(GLenum mode, GLsizei count, GLenum type,
          DBG(printf("Using VBO %d for indices\n", glstate->vao->elements->real_buffer);)
      }
      realize_bufferIndex();
@@ -390,7 +424,7 @@ index c21bcf1..6fadd81 100644
      if(use_vbo)
          wantBufferIndex(0);
      free_scratch(&scratch);
-@@ -1124,9 +1180,15 @@ void realize_glenv(int ispoint, int first, int count, GLenum type, const void* i
+@@ -1124,9 +1214,15 @@ void realize_glenv(int ispoint, int first, int count, GLenum type, const void* i
                DBG(printf("Use GLSL program %d\n", glstate->gleshard->program);)
              }
          }
@@ -1183,7 +1217,7 @@ index 5b8e8b0..6a6ee0b 100644
                  }
          }
 diff --git a/src/gl/program.c b/src/gl/program.c
-index 2eaeb02..72f40a1 100644
+index 2eaeb02..832f9ba 100644
 --- a/src/gl/program.c
 +++ b/src/gl/program.c
 @@ -1,4 +1,6 @@
@@ -1231,7 +1265,32 @@ index 2eaeb02..72f40a1 100644
                  memset((char*)glprogram->cache.cache+m->cache_offs, 0xff, m->cache_size);
          )
      }
-@@ -786,7 +793,11 @@ void APIENTRY_GL4ES gl4es_glLinkProgram(GLuint program) {
+@@ -781,18 +788,43 @@ void APIENTRY_GL4ES gl4es_glLinkProgram(GLuint program) {
+             if(attribute)
+                 gl4es_glBindAttribLocation(glprogram->id, i, attribute);
+         }
++    // The program cache (LIBGL_PROGRAM_CACHE): this program built before is
++    // loaded, its shaders' compiles (deferred, gl4es_glCompileShader) never
++    // done; otherwise they are done now, and what links is kept
++    extern int gl4es_app_prgcache_path(char* out, size_t n, program_t* glprogram);
++    extern int gl4es_prgcache_load(GLuint prog, const char* path);
++    extern void gl4es_prgcache_save(GLuint prog, const char* path);
++    extern unsigned gl4es_stat_app_hits, gl4es_stat_app_built;
++    char cpath[600];
++    int ccache = gl4es_app_prgcache_path(cpath, sizeof(cpath), glprogram);
++    if(ccache && gl4es_prgcache_load(program, cpath)) {
++        gl4es_stat_app_hits++;
++        glprogram->linked = 1;
++        noerrorShimNoPurge();
++        return;
++    }
++    for (int i=0; i<glprogram->attach_size; i++) {
++        shader_t* sh = getShader(glprogram->attach[i]);
++        if(sh && sh->deferred) gl4es_shader_compile_now(sh);
++    }
++    if(ccache) gl4es_stat_app_built++;
+     // ok, continue with linking
+     LOAD_GLES2(glLinkProgram);
      if(gles_glLinkProgram) {
          LOAD_GLES(glGetError);
          LOAD_GLES2(glGetProgramiv);
@@ -1244,6 +1303,13 @@ index 2eaeb02..72f40a1 100644
          GLenum err = gles_glGetError();
          // Get Link Status
          gles_glGetProgramiv(glprogram->id, GL_LINK_STATUS, &glprogram->linked);
+         DBG(printf(" link status = %d\n", glprogram->linked);)
+         if(glprogram->linked) {
+             fill_program(glprogram);
++            if(ccache) gl4es_prgcache_save(program, cpath);
+             noerrorShimNoPurge();
+         } else {
+             // should DBG the linker error?
 diff --git a/src/gl/program.h b/src/gl/program.h
 index a788da4..13170f9 100644
 --- a/src/gl/program.h
@@ -1274,7 +1340,7 @@ index a788da4..13170f9 100644
  
  KHASH_MAP_DECLARE_INT(programlist, program_t *);
 diff --git a/src/gl/shader.c b/src/gl/shader.c
-index 0bde8f1..66b451c 100644
+index 0bde8f1..0a03471 100644
 --- a/src/gl/shader.c
 +++ b/src/gl/shader.c
 @@ -1,3 +1,4 @@
@@ -1290,16 +1356,26 @@ index 0bde8f1..66b451c 100644
  
  //#define DEBUG
  #ifdef DEBUG
-@@ -115,15 +117,25 @@ void APIENTRY_GL4ES gl4es_glDeleteShader(GLuint shader) {
+@@ -115,15 +117,42 @@ void APIENTRY_GL4ES gl4es_glDeleteShader(GLuint shader) {
      }
  }
  
 +// what building shaders costs, for the host's frame report: driver compiles
 +// and links, and the milliseconds they took (gl4es_build_stats)
 +unsigned gl4es_stat_compiles, gl4es_stat_links;
-+unsigned gl4es_stat_fpe_hits, gl4es_stat_fpe_built;   /* fpe.c's programs: from the disk cache, built */
++unsigned gl4es_stat_fpe_hits, gl4es_stat_fpe_built;
++unsigned gl4es_stat_app_hits, gl4es_stat_app_built;   /* the game's own programs: from the disk cache, built */   /* fpe.c's programs: from the disk cache, built */
 +double gl4es_stat_compile_ms, gl4es_stat_link_ms;
 +static double stat_now_ms(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec*1e3 + t.tv_nsec/1e6; }
++
++void gl4es_shader_compile_now(shader_t *glshader) {
++    glshader->deferred = 0;
++    LOAD_GLES2(glCompileShader);
++    if(!gles_glCompileShader) return;
++    double t0 = stat_now_ms();
++    gles_glCompileShader(glshader->id);
++    gl4es_stat_compile_ms += stat_now_ms()-t0; gl4es_stat_compiles++;
++}
 +
  void APIENTRY_GL4ES gl4es_glCompileShader(GLuint shader) {
      DBG(printf("glCompileShader(%d)\n", shader);)
@@ -1308,6 +1384,13 @@ index 0bde8f1..66b451c 100644
  
      glshader->compiled = 1;
 +    if(glshader->pending) gl4es_shader_send_source(glshader);
++    // With the program cache (LIBGL_PROGRAM_CACHE) the driver's compile waits
++    // for the link: a program found there is loaded and its shaders never
++    // compiled - GLES keeps binaries of programs only
++    {
++        extern const char* gl4es_prgcache_dir(void);
++        if(gl4es_prgcache_dir() && !globals4es.logshader) { glshader->deferred = 1; noerrorShim(); return; }
++    }
      LOAD_GLES2(glCompileShader);
      if(gles_glCompileShader) {
 +        double t0 = stat_now_ms();
@@ -1316,7 +1399,7 @@ index 0bde8f1..66b451c 100644
          errorGL();
          if(globals4es.logshader) {
              // get compile status and print shaders sources if compile fail...
-@@ -169,6 +181,16 @@ void APIENTRY_GL4ES gl4es_glShaderSource(GLuint shader, GLsizei count, const GLc
+@@ -169,6 +198,16 @@ void APIENTRY_GL4ES gl4es_glShaderSource(GLuint shader, GLsizei count, const GLc
          for (int i=0; i<count; i++)
              strcat(glshader->source, string[i]);
      }
@@ -1333,7 +1416,7 @@ index 0bde8f1..66b451c 100644
      LOAD_GLES2(glShaderSource);
      if (gles_glShaderSource) {
          // adapt shader if needed (i.e. not an es2 context and shader is not #version 100)
-@@ -176,11 +198,14 @@ void APIENTRY_GL4ES gl4es_glShaderSource(GLuint shader, GLsizei count, const GLc
+@@ -176,11 +215,14 @@ void APIENTRY_GL4ES gl4es_glShaderSource(GLuint shader, GLsizei count, const GLc
              glshader->converted = strdup(glshader->source);
          else
              glshader->converted = ConvertShader(glshader->source, glshader->type==GL_VERTEX_SHADER?1:0, &glshader->need);
@@ -1352,7 +1435,7 @@ index 0bde8f1..66b451c 100644
  }
  
  #define SUPER()     \
-@@ -232,6 +257,11 @@ void redoShader(GLuint shader, shaderconv_need_t *need) {
+@@ -232,6 +274,11 @@ void redoShader(GLuint shader, shaderconv_need_t *need) {
      free(glshader->converted);
      memcpy(&glshader->need, need, sizeof(shaderconv_need_t));
      glshader->converted = ConvertShader(glshader->source, glshader->type==GL_VERTEX_SHADER?1:0, &glshader->need);
@@ -1364,21 +1447,58 @@ index 0bde8f1..66b451c 100644
      // send source to GLES2 hardware if any
      gles_glShaderSource(shader, 1, (const GLchar * const*)((glshader->converted)?(&glshader->converted):(&glshader->source)), NULL);
      // recompile...
+@@ -298,7 +345,10 @@ void APIENTRY_GL4ES gl4es_glGetShaderInfoLog(GLuint shader, GLsizei maxLength, G
+         return;
+     }
+     LOAD_GLES2(glGetShaderInfoLog);
+-    if(gles_glGetShaderInfoLog) {
++    if(glshader->deferred) {
++        infoLog[0] = 0;
++        if(length) *length = 0;
++    } else if(gles_glGetShaderInfoLog) {
+         gles_glGetShaderInfoLog(glshader->id, maxLength, length, infoLog);
+         errorGL();
+     } else {
+@@ -321,7 +371,9 @@ void APIENTRY_GL4ES gl4es_glGetShaderiv(GLuint shader, GLenum pname, GLint *para
+             *params = (glshader->deleted)?GL_TRUE:GL_FALSE;
+             break;
+         case GL_COMPILE_STATUS:
+-            if(gles_glGetShaderiv) {
++            if(glshader->deferred) {
++                *params = GL_TRUE;      // the compile waits for the link (these compiled before)
++            } else if(gles_glGetShaderiv) {
+                 gles_glGetShaderiv(glshader->id, pname, params);
+                 errorGL();
+             } else {
+@@ -329,7 +381,9 @@ void APIENTRY_GL4ES gl4es_glGetShaderiv(GLuint shader, GLenum pname, GLint *para
+             }
+             break;
+         case GL_INFO_LOG_LENGTH:
+-            if(gles_glGetShaderiv) {
++            if(glshader->deferred) {
++                *params = 0;
++            } else if(gles_glGetShaderiv) {
+                 gles_glGetShaderiv(glshader->id, pname, params);
+                 errorGL();
+             } else {
 diff --git a/src/gl/shader.h b/src/gl/shader.h
-index e080eee..a406625 100644
+index e080eee..ab0e779 100644
 --- a/src/gl/shader.h
 +++ b/src/gl/shader.h
-@@ -33,6 +33,7 @@ struct shader_s {
+@@ -33,6 +33,8 @@ struct shader_s {
      struct oldprogram_s   *old;     // in case the shader is an old ARB ASM-like program
      char*           source; // original source of the shader (or converted if coming from "old")
      char*           converted;  // converted source (or null if nothing)
 +    int             pending;    // source set but not yet converted and sent: done at compile
++    int             deferred;   // compiled for the app, not yet by the driver (the program cache: done at link if missed)
      // shaderconv
      shaderconv_need_t  need;    // the varying need / provide of the shader
  }; // shader_t defined in oldprogram.h
-@@ -43,6 +44,7 @@ GLuint APIENTRY_GL4ES gl4es_glCreateShader(GLenum shaderType);
+@@ -42,7 +44,9 @@ KHASH_MAP_DECLARE_INT(shaderlist, struct shader_s *);
+ GLuint APIENTRY_GL4ES gl4es_glCreateShader(GLenum shaderType);
  void APIENTRY_GL4ES gl4es_glDeleteShader(GLuint shader);
  void APIENTRY_GL4ES gl4es_glCompileShader(GLuint shader);
++void gl4es_shader_compile_now(struct shader_s *glshader);   // a deferred compile, done
  void APIENTRY_GL4ES gl4es_glShaderSource(GLuint shader, GLsizei count, const GLchar * const *string, const GLint *length);
 +void gl4es_shader_send_source(struct shader_s *glshader);   // convert a pending source now
  void APIENTRY_GL4ES gl4es_glGetShaderSource(GLuint shader, GLsizei bufSize, GLsizei *length, GLchar *source);
