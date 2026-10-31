@@ -1217,7 +1217,7 @@ index 5b8e8b0..6a6ee0b 100644
                  }
          }
 diff --git a/src/gl/program.c b/src/gl/program.c
-index 2eaeb02..832f9ba 100644
+index 2eaeb02..adf0960 100644
 --- a/src/gl/program.c
 +++ b/src/gl/program.c
 @@ -1,4 +1,6 @@
@@ -1265,7 +1265,7 @@ index 2eaeb02..832f9ba 100644
                  memset((char*)glprogram->cache.cache+m->cache_offs, 0xff, m->cache_size);
          )
      }
-@@ -781,18 +788,43 @@ void APIENTRY_GL4ES gl4es_glLinkProgram(GLuint program) {
+@@ -781,22 +788,58 @@ void APIENTRY_GL4ES gl4es_glLinkProgram(GLuint program) {
              if(attribute)
                  gl4es_glBindAttribLocation(glprogram->id, i, attribute);
          }
@@ -1310,6 +1310,21 @@ index 2eaeb02..832f9ba 100644
              noerrorShimNoPurge();
          } else {
              // should DBG the linker error?
+             DBG(printf(" Link failled!\n");)
++            {   static int shown;   // what was attached, the first few times
++                if(shown++ < 6) {
++                    printf("LIBGL: link of program %u failed; attached:", program);
++                    for (int i=0; i<glprogram->attach_size; i++) {
++                        shader_t* sh = getShader(glprogram->attach[i]);
++                        printf(" %u(%s%s%s%s)", glprogram->attach[i], sh?(sh->type==GL_VERTEX_SHADER?"v":"f"):"?",
++                               sh&&sh->deferred?" deferred":"", sh&&sh->compiled?" compiled":"", sh&&sh->pending?" pending":"");
++                    }
++                    printf("\n");
++                }
++            }
+             glprogram->linked = 0;
+             errorShim(err);
+             return;
 diff --git a/src/gl/program.h b/src/gl/program.h
 index a788da4..13170f9 100644
 --- a/src/gl/program.h
@@ -1340,7 +1355,7 @@ index a788da4..13170f9 100644
  
  KHASH_MAP_DECLARE_INT(programlist, program_t *);
 diff --git a/src/gl/shader.c b/src/gl/shader.c
-index 0bde8f1..0a03471 100644
+index 0bde8f1..67fb486 100644
 --- a/src/gl/shader.c
 +++ b/src/gl/shader.c
 @@ -1,3 +1,4 @@
@@ -1356,7 +1371,7 @@ index 0bde8f1..0a03471 100644
  
  //#define DEBUG
  #ifdef DEBUG
-@@ -115,15 +117,42 @@ void APIENTRY_GL4ES gl4es_glDeleteShader(GLuint shader) {
+@@ -115,15 +117,54 @@ void APIENTRY_GL4ES gl4es_glDeleteShader(GLuint shader) {
      }
  }
  
@@ -1375,6 +1390,18 @@ index 0bde8f1..0a03471 100644
 +    double t0 = stat_now_ms();
 +    gles_glCompileShader(glshader->id);
 +    gl4es_stat_compile_ms += stat_now_ms()-t0; gl4es_stat_compiles++;
++    {   // its errors were not asked for (the status read compiled): say them here
++        LOAD_GLES2(glGetShaderiv);
++        LOAD_GLES2(glGetShaderInfoLog);
++        GLint ok = GL_TRUE;
++        gles_glGetShaderiv(glshader->id, GL_COMPILE_STATUS, &ok);
++        static int shown;
++        if(ok!=GL_TRUE && shown++ < 4) {
++            char log[1000] = "";
++            gles_glGetShaderInfoLog(glshader->id, sizeof(log), NULL, log);
++            printf("LIBGL: %s shader %u does not compile: %s\n", glshader->type==GL_VERTEX_SHADER?"vertex":"fragment", glshader->id, log);
++        }
++    }
 +}
 +
  void APIENTRY_GL4ES gl4es_glCompileShader(GLuint shader) {
@@ -1399,7 +1426,7 @@ index 0bde8f1..0a03471 100644
          errorGL();
          if(globals4es.logshader) {
              // get compile status and print shaders sources if compile fail...
-@@ -169,6 +198,16 @@ void APIENTRY_GL4ES gl4es_glShaderSource(GLuint shader, GLsizei count, const GLc
+@@ -169,6 +210,16 @@ void APIENTRY_GL4ES gl4es_glShaderSource(GLuint shader, GLsizei count, const GLc
          for (int i=0; i<count; i++)
              strcat(glshader->source, string[i]);
      }
@@ -1416,7 +1443,7 @@ index 0bde8f1..0a03471 100644
      LOAD_GLES2(glShaderSource);
      if (gles_glShaderSource) {
          // adapt shader if needed (i.e. not an es2 context and shader is not #version 100)
-@@ -176,11 +215,14 @@ void APIENTRY_GL4ES gl4es_glShaderSource(GLuint shader, GLsizei count, const GLc
+@@ -176,11 +227,14 @@ void APIENTRY_GL4ES gl4es_glShaderSource(GLuint shader, GLsizei count, const GLc
              glshader->converted = strdup(glshader->source);
          else
              glshader->converted = ConvertShader(glshader->source, glshader->type==GL_VERTEX_SHADER?1:0, &glshader->need);
@@ -1435,7 +1462,7 @@ index 0bde8f1..0a03471 100644
  }
  
  #define SUPER()     \
-@@ -232,6 +274,11 @@ void redoShader(GLuint shader, shaderconv_need_t *need) {
+@@ -232,6 +286,11 @@ void redoShader(GLuint shader, shaderconv_need_t *need) {
      free(glshader->converted);
      memcpy(&glshader->need, need, sizeof(shaderconv_need_t));
      glshader->converted = ConvertShader(glshader->source, glshader->type==GL_VERTEX_SHADER?1:0, &glshader->need);
@@ -1447,7 +1474,7 @@ index 0bde8f1..0a03471 100644
      // send source to GLES2 hardware if any
      gles_glShaderSource(shader, 1, (const GLchar * const*)((glshader->converted)?(&glshader->converted):(&glshader->source)), NULL);
      // recompile...
-@@ -298,7 +345,10 @@ void APIENTRY_GL4ES gl4es_glGetShaderInfoLog(GLuint shader, GLsizei maxLength, G
+@@ -298,7 +357,10 @@ void APIENTRY_GL4ES gl4es_glGetShaderInfoLog(GLuint shader, GLsizei maxLength, G
          return;
      }
      LOAD_GLES2(glGetShaderInfoLog);
@@ -1459,7 +1486,7 @@ index 0bde8f1..0a03471 100644
          gles_glGetShaderInfoLog(glshader->id, maxLength, length, infoLog);
          errorGL();
      } else {
-@@ -321,7 +371,9 @@ void APIENTRY_GL4ES gl4es_glGetShaderiv(GLuint shader, GLenum pname, GLint *para
+@@ -321,7 +383,9 @@ void APIENTRY_GL4ES gl4es_glGetShaderiv(GLuint shader, GLenum pname, GLint *para
              *params = (glshader->deleted)?GL_TRUE:GL_FALSE;
              break;
          case GL_COMPILE_STATUS:
@@ -1470,7 +1497,7 @@ index 0bde8f1..0a03471 100644
                  gles_glGetShaderiv(glshader->id, pname, params);
                  errorGL();
              } else {
-@@ -329,7 +381,9 @@ void APIENTRY_GL4ES gl4es_glGetShaderiv(GLuint shader, GLenum pname, GLint *para
+@@ -329,7 +393,9 @@ void APIENTRY_GL4ES gl4es_glGetShaderiv(GLuint shader, GLenum pname, GLint *para
              }
              break;
          case GL_INFO_LOG_LENGTH:
