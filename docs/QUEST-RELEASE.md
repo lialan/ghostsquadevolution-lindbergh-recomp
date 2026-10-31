@@ -11,6 +11,27 @@ Sega Lindbergh arcade games in VR, for Meta Quest 3, Quest 3S and Quest Pro:
 code recompiled to run natively on the headset, the VR host, and its
 libraries. You need your own copy of the arcade game.
 
+## New in v0.2.6
+
+- **Dual wielding** in all four games: turn on *Dual wield* in the settings
+  panel (it is saved). The gun hand is player 1; the other hand is player 2,
+  with a blue laser and a red dot. Each hand's thumbstick click is that
+  player's Start. Player 2's gun goes through the cabinet's JVS, as on the
+  arcade.
+- **Gun models:** The House of the Dead 4 and The House of the Dead 4 Special
+  put a B&T TP9 in your hand; Ghost Squad Evolution a model of the cabinet's
+  own gun controller. The red-dot sight is a slim reflex sight in every game.
+- **Performance on the Quest:** The House of the Dead 4 does its GL work on
+  its own thread; the games' own GLSL shader programs are cached on disk, so
+  scenes start with less stutter after the first run; gl4es builds shader
+  text faster; The House of the Dead 4, Let's Go Jungle! and Ghost Squad
+  Evolution are re-translated with the current lifter (faster game code);
+  viewport and scissor reads no longer wait for the GL thread.
+- The settings panel's last row (*Close*) is no longer cut off.
+- Let's Go Jungle! is still experimental (a bit buggy), as in v0.2.5.
+- Installing over v0.2.5 keeps your settings (same signing keys). As before,
+  bring your own game files: the APKs contain no game data.
+
 ## Install
 
 1. Enable developer mode on the headset and install the APK with
@@ -61,7 +82,9 @@ Trigger fires, grip reloads (or pull the trigger pointing off the screen), a
 thumbstick click is Start, and coins are automatic; in The House of the Dead 4
 Special, shake the gun to reload. The left controller's
 menu button opens the settings panel: sights, laser, gun model, gun hand,
-resolution, display rate, recentring, and Reset game.
+dual wield, resolution, display rate, recentring, and Reset game. With dual
+wield on, the other hand is player 2, and each hand's thumbstick click is its
+player's Start.
 
 More: [Ghost Squad Evolution](https://github.com/lialan/lindbergh-recomp-ports/blob/main/docs/ghostsquadevolution/QUEST.md),
 [The House of the Dead 4](https://github.com/lialan/lindbergh-recomp-ports/blob/main/docs/hotd4/QUEST.md),
