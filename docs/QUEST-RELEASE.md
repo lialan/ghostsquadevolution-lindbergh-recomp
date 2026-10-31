@@ -4,7 +4,7 @@ Sega Lindbergh arcade games in VR, for Meta Quest 3, Quest 3S and Quest Pro:
 | --- | --- |
 | Ghost Squad Evolution | `GhostSquadEvolutionVR-<version>-quest3.apk` |
 | The House of the Dead 4 | `HouseOfTheDead4VR-<version>-quest3.apk` |
-| Let's Go Jungle! | `LetsGoJungleVR-<version>-quest3.apk` |
+| Let's Go Jungle! (experimental: a bit buggy) | `LetsGoJungleVR-<version>-quest3.apk` |
 | The House of the Dead 4 Special | `HouseOfTheDead4SpecialVR-<version>-quest3.apk` |
 
 **The games themselves are not included.** Each APK holds a port: the game's
