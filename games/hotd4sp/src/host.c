@@ -77,6 +77,7 @@ static const LgGameProfile k_profile = {
         .depth_read = LG_DEPTH_AUTO,
         .gl_thread = 1,         /* the street: 32-37 fps with the GL on the game's thread, 56-58 without */
         .hud_head_locked = 1,   /* the life bar and prompts where the eye expects them, wherever it looks */
+        .aim_on_hud = 1,        /* shots land under the laser's dot on the 2D, where the game draws their hit */
         /* its 2D - HUD, subtitles, the path choice's boxes - is quads hung
          * before a 45-degree, 4:3 camera of its own (the world's is 1.954) */
         .hud_lens = 1.8107f,
