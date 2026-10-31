@@ -74,7 +74,7 @@ index 142223b..90ae5b1 100644
          clientisenabled(GL_VERTEX_ARRAY, vertexattrib[ATT_VERTEX].enabled);
          clientisenabled(GL_NORMAL_ARRAY, vertexattrib[ATT_NORMAL].enabled);
 diff --git a/src/gl/fpe.c b/src/gl/fpe.c
-index c21bcf1..856a08a 100644
+index c21bcf1..6fadd81 100644
 --- a/src/gl/fpe.c
 +++ b/src/gl/fpe.c
 @@ -1,8 +1,13 @@
@@ -91,7 +91,7 @@ index c21bcf1..856a08a 100644
  #include "glcase.h"
  #include "init.h"
  #include "loader.h"
-@@ -382,6 +387,119 @@ void APIENTRY_GL4ES fpe_oldprogram(fpe_state_t* state) {
+@@ -382,6 +387,121 @@ void APIENTRY_GL4ES fpe_oldprogram(fpe_state_t* state) {
      DBG(printf("Created program %d, with vertex=%d (old=%d) fragment=%d (old=%d), alpha=%d/%d\n", glstate->fpe->prog, glstate->fpe->vert, state->vertex_prg_id, glstate->fpe->frag, state->fragment_prg_id, state->alphatest, state->alphafunc);)
  }
  
@@ -182,7 +182,9 @@ index c21bcf1..856a08a 100644
 +{
 +    char path[600];
 +    int cached = prgcache_path(path, sizeof(path), vert, frag, attribs);
-+    if(cached && prgcache_load(prog, path)) return 1;
++    extern unsigned gl4es_stat_fpe_hits, gl4es_stat_fpe_built;
++    if(cached && prgcache_load(prog, path)) { gl4es_stat_fpe_hits++; return 1; }
++    gl4es_stat_fpe_built++;
 +    GLint status;
 +    GLuint sh[2] = {vert, frag};
 +    for(int i=0; i<2; i++) {
@@ -211,7 +213,7 @@ index c21bcf1..856a08a 100644
  // ********* Shader stuffs handling *********
  void APIENTRY_GL4ES fpe_program(int ispoint) {
      glstate->fpe_state->point = ispoint;
-@@ -399,48 +517,15 @@ void APIENTRY_GL4ES fpe_program(int ispoint) {
+@@ -399,48 +519,15 @@ void APIENTRY_GL4ES fpe_program(int ispoint) {
              if(state.vertex_prg_id || state.fragment_prg_id) {
                  fpe_oldprogram(&state);
              } else {
@@ -261,7 +263,7 @@ index c21bcf1..856a08a 100644
                  fpe_AddProgramPSA(glstate->fpe->prog, &state);
              }
          }
-@@ -466,24 +551,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
+@@ -466,24 +553,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
          GLint status;
          fpe->vert = gl4es_glCreateShader(GL_VERTEX_SHADER);
          gl4es_glShaderSource(fpe->vert, 1, fpe_CustomVertexShader(glprogram->last_vert->source, state, 0), NULL);
@@ -286,7 +288,7 @@ index c21bcf1..856a08a 100644
          fpe->prog = gl4es_glCreateProgram();
          gl4es_glAttachShader(fpe->prog, fpe->vert);
          gl4es_glAttachShader(fpe->prog, fpe->frag);
-@@ -495,14 +564,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
+@@ -495,14 +566,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader(program_t* glprogram, fpe_state_t* st
                  gles_glBindAttribLocation(fpe->prog, al->index, al->name);
              );
          }
@@ -302,7 +304,7 @@ index c21bcf1..856a08a 100644
          // now find the program
          khint_t k_program;
          {
-@@ -543,24 +606,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
+@@ -543,24 +608,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
          GLint status;
          fpe->vert = gl4es_glCreateShader(GL_VERTEX_SHADER);
          gl4es_glShaderSource(fpe->vert, 1, fpe_VertexShader(glprogram->default_need, state_vertex), NULL);
@@ -327,7 +329,7 @@ index c21bcf1..856a08a 100644
          fpe->prog = gl4es_glCreateProgram();
          gl4es_glAttachShader(fpe->prog, fpe->vert);
          gl4es_glAttachShader(fpe->prog, fpe->frag);
-@@ -572,14 +619,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
+@@ -572,14 +621,8 @@ program_t* APIENTRY_GL4ES fpe_CustomShader_DefaultVertex(program_t* glprogram, f
                  gles_glBindAttribLocation(fpe->prog, al->index, al->name);
              );
          }
@@ -343,7 +345,7 @@ index c21bcf1..856a08a 100644
          // now find the program
          khint_t k_program;
          {
-@@ -621,14 +662,23 @@ void APIENTRY_GL4ES fpe_SyncUniforms(uniformcache_t *cache, program_t* glprogram
+@@ -621,14 +664,23 @@ void APIENTRY_GL4ES fpe_SyncUniforms(uniformcache_t *cache, program_t* glprogram
      kh_foreach(uniforms, k, m,
          if(m->parent_size) {
              DBG(++cnt;)
@@ -368,7 +370,7 @@ index c21bcf1..856a08a 100644
                  case GL_SAMPLER_CUBE:
                  case GL_INT:
                  case GL_INT_VEC2:
-@@ -826,7 +876,9 @@ void APIENTRY_GL4ES fpe_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
+@@ -826,7 +878,9 @@ void APIENTRY_GL4ES fpe_glDrawArrays(GLenum mode, GLint first, GLsizei count) {
  void APIENTRY_GL4ES fpe_glDrawElements(GLenum mode, GLsizei count, GLenum type, const GLvoid *indices) {
      DBG(printf("fpe_glDrawElements(%s, %d, %s, %p), program=%d, instanceID=%u\n", PrintEnum(mode), count, PrintEnum(type), indices, glstate->glsl->program, glstate->instanceID);)
      scratch_t scratch = {0};
@@ -378,7 +380,7 @@ index c21bcf1..856a08a 100644
      LOAD_GLES(glDrawElements);
      int use_vbo = 0;
      if(glstate->vao->elements && glstate->vao->elements->real_buffer && indices>=glstate->vao->elements->data && indices<=((void*)((char*)glstate->vao->elements->data+glstate->vao->elements->size))) {
-@@ -836,7 +888,9 @@ void APIENTRY_GL4ES fpe_glDrawElements(GLenum mode, GLsizei count, GLenum type,
+@@ -836,7 +890,9 @@ void APIENTRY_GL4ES fpe_glDrawElements(GLenum mode, GLsizei count, GLenum type,
          DBG(printf("Using VBO %d for indices\n", glstate->vao->elements->real_buffer);)
      }
      realize_bufferIndex();
@@ -388,7 +390,7 @@ index c21bcf1..856a08a 100644
      if(use_vbo)
          wantBufferIndex(0);
      free_scratch(&scratch);
-@@ -1124,9 +1178,15 @@ void realize_glenv(int ispoint, int first, int count, GLenum type, const void* i
+@@ -1124,9 +1180,15 @@ void realize_glenv(int ispoint, int first, int count, GLenum type, const void* i
                DBG(printf("Use GLSL program %d\n", glstate->gleshard->program);)
              }
          }
@@ -1181,16 +1183,17 @@ index 5b8e8b0..6a6ee0b 100644
                  }
          }
 diff --git a/src/gl/program.c b/src/gl/program.c
-index 2eaeb02..a50ad03 100644
+index 2eaeb02..72f40a1 100644
 --- a/src/gl/program.c
 +++ b/src/gl/program.c
-@@ -1,4 +1,5 @@
+@@ -1,4 +1,6 @@
++#include <time.h>
  #include "program.h"
 +#include "multiview.h"
  
  #include <stdlib.h>
  #include <string.h>
-@@ -538,6 +539,8 @@ static void fill_program(program_t *glprogram)
+@@ -538,6 +540,8 @@ static void fill_program(program_t *glprogram)
      int ret;
      DBG(GLenum e2;)
  
@@ -1199,7 +1202,7 @@ index 2eaeb02..a50ad03 100644
      // init bluitin emulation first
      builtin_Init(glprogram);
      // Grab all Uniform
-@@ -574,14 +577,17 @@ static void fill_program(program_t *glprogram)
+@@ -574,14 +578,17 @@ static void fill_program(program_t *glprogram)
                      gluniform->type = type;
                      gluniform->cache_offs = uniform_cache+j*uniformsize(type);
                      gluniform->cache_size = uniformsize(type)*(size-j);
@@ -1219,7 +1222,7 @@ index 2eaeb02..a50ad03 100644
                          glprogram->texunits[tu_idx].id = id;
                          glprogram->texunits[tu_idx].type=TU_TEX2D;
                          glprogram->texunits[tu_idx].req_tu = glprogram->texunits[tu_idx].act_tu = 0;
-@@ -608,7 +614,7 @@ static void fill_program(program_t *glprogram)
+@@ -608,7 +615,7 @@ static void fill_program(program_t *glprogram)
          uniform_t *m;
          khint_t k;
          kh_foreach(glprogram->uniform, k, m,
@@ -1228,6 +1231,19 @@ index 2eaeb02..a50ad03 100644
                  memset((char*)glprogram->cache.cache+m->cache_offs, 0xff, m->cache_size);
          )
      }
+@@ -786,7 +793,11 @@ void APIENTRY_GL4ES gl4es_glLinkProgram(GLuint program) {
+     if(gles_glLinkProgram) {
+         LOAD_GLES(glGetError);
+         LOAD_GLES2(glGetProgramiv);
+-        gles_glLinkProgram(glprogram->id);
++        { extern unsigned gl4es_stat_links; extern double gl4es_stat_link_ms;
++          struct timespec a, b; clock_gettime(CLOCK_MONOTONIC, &a);
++          gles_glLinkProgram(glprogram->id);
++          clock_gettime(CLOCK_MONOTONIC, &b);
++          gl4es_stat_link_ms += (b.tv_sec-a.tv_sec)*1e3 + (b.tv_nsec-a.tv_nsec)/1e6; gl4es_stat_links++; }
+         GLenum err = gles_glGetError();
+         // Get Link Status
+         gles_glGetProgramiv(glprogram->id, GL_LINK_STATUS, &glprogram->linked);
 diff --git a/src/gl/program.h b/src/gl/program.h
 index a788da4..13170f9 100644
 --- a/src/gl/program.h
@@ -1258,10 +1274,15 @@ index a788da4..13170f9 100644
  
  KHASH_MAP_DECLARE_INT(programlist, program_t *);
 diff --git a/src/gl/shader.c b/src/gl/shader.c
-index 0bde8f1..85be2a6 100644
+index 0bde8f1..66b451c 100644
 --- a/src/gl/shader.c
 +++ b/src/gl/shader.c
-@@ -7,6 +7,7 @@
+@@ -1,3 +1,4 @@
++#include <time.h>
+ #include "shader.h"
+ 
+ #include "../glx/hardext.h"
+@@ -7,6 +8,7 @@
  #include "glstate.h"
  #include "loader.h"
  #include "shaderconv.h"
@@ -1269,15 +1290,33 @@ index 0bde8f1..85be2a6 100644
  
  //#define DEBUG
  #ifdef DEBUG
-@@ -121,6 +122,7 @@ void APIENTRY_GL4ES gl4es_glCompileShader(GLuint shader) {
+@@ -115,15 +117,25 @@ void APIENTRY_GL4ES gl4es_glDeleteShader(GLuint shader) {
+     }
+ }
+ 
++// what building shaders costs, for the host's frame report: driver compiles
++// and links, and the milliseconds they took (gl4es_build_stats)
++unsigned gl4es_stat_compiles, gl4es_stat_links;
++unsigned gl4es_stat_fpe_hits, gl4es_stat_fpe_built;   /* fpe.c's programs: from the disk cache, built */
++double gl4es_stat_compile_ms, gl4es_stat_link_ms;
++static double stat_now_ms(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec*1e3 + t.tv_nsec/1e6; }
++
+ void APIENTRY_GL4ES gl4es_glCompileShader(GLuint shader) {
+     DBG(printf("glCompileShader(%d)\n", shader);)
+     // look for the shader
      CHECK_SHADER(void, shader)
  
      glshader->compiled = 1;
 +    if(glshader->pending) gl4es_shader_send_source(glshader);
      LOAD_GLES2(glCompileShader);
      if(gles_glCompileShader) {
++        double t0 = stat_now_ms();
          gles_glCompileShader(glshader->id);
-@@ -169,6 +171,16 @@ void APIENTRY_GL4ES gl4es_glShaderSource(GLuint shader, GLsizei count, const GLc
++        gl4es_stat_compile_ms += stat_now_ms()-t0; gl4es_stat_compiles++;
+         errorGL();
+         if(globals4es.logshader) {
+             // get compile status and print shaders sources if compile fail...
+@@ -169,6 +181,16 @@ void APIENTRY_GL4ES gl4es_glShaderSource(GLuint shader, GLsizei count, const GLc
          for (int i=0; i<count; i++)
              strcat(glshader->source, string[i]);
      }
@@ -1294,7 +1333,7 @@ index 0bde8f1..85be2a6 100644
      LOAD_GLES2(glShaderSource);
      if (gles_glShaderSource) {
          // adapt shader if needed (i.e. not an es2 context and shader is not #version 100)
-@@ -176,11 +188,14 @@ void APIENTRY_GL4ES gl4es_glShaderSource(GLuint shader, GLsizei count, const GLc
+@@ -176,11 +198,14 @@ void APIENTRY_GL4ES gl4es_glShaderSource(GLuint shader, GLsizei count, const GLc
              glshader->converted = strdup(glshader->source);
          else
              glshader->converted = ConvertShader(glshader->source, glshader->type==GL_VERTEX_SHADER?1:0, &glshader->need);
@@ -1313,7 +1352,7 @@ index 0bde8f1..85be2a6 100644
  }
  
  #define SUPER()     \
-@@ -232,6 +247,11 @@ void redoShader(GLuint shader, shaderconv_need_t *need) {
+@@ -232,6 +257,11 @@ void redoShader(GLuint shader, shaderconv_need_t *need) {
      free(glshader->converted);
      memcpy(&glshader->need, need, sizeof(shaderconv_need_t));
      glshader->converted = ConvertShader(glshader->source, glshader->type==GL_VERTEX_SHADER?1:0, &glshader->need);
