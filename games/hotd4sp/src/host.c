@@ -142,10 +142,9 @@ static const LgGameProfile k_profile = {
         .depth_read = LG_DEPTH_AUTO,
         .gl_thread = 1,         /* the street: 32-37 fps with the GL on the game's thread, 56-58 without */
         .hud_head_locked = 1,   /* the life bar and prompts where the eye expects them, wherever it looks */
-        /* its hit flash: put at the hit's distance on the line from the head through
-         * the gun's screen point, beside the laser in the headset (its two
-         * sprites' textures, as the headset's GL names them) */
-        .drop_sprite_tex = { 132, 202 },
+        /* its shots leave the gun (h_get_target), so its screen point only places
+         * its 2D - the hit's splash among it: where the laser crosses the HUD */
+        .aim_on_hud = 1,
         /* its 2D - HUD, subtitles, the path choice's boxes - is quads hung
          * before a 45-degree, 4:3 camera of its own (the world's is 1.954) */
         .hud_lens = 1.8107f,
