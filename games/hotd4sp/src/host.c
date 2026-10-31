@@ -57,6 +57,14 @@ static void h_key_crypt(CPU *c)
 #define CAN_DAMAGE_PLAYER 0x080c18d4u
 static void h_no_damage(CPU *c) { RET(0); }
 
+/* The player's shot effect - the splash where a bullet lands - drawn at the
+ * game camera's hit. In the headset the shot comes from the hand, so it never
+ * sat under the laser: left out there (LINDBERGH_SPLASH=1 keeps it).
+ * CPlayerEffect::Draw(), matched against the original game's: the same code
+ * instruction for instruction. */
+#define PLAYER_EFFECT_DRAW 0x0819b72eu
+static void h_no_splash(CPU *c) { (void)c; }
+
 /* What the runtime needs to know about this game (game_profile.h). */
 static const LgGameProfile k_profile = {
     .title = "The House of the Dead 4 Special",
@@ -106,6 +114,13 @@ int main(int argc, char **argv)
         if (g && *g == '1' && guest_override_va("CPlayer::CanDamagePlayer", CAN_DAMAGE_PLAYER, h_no_damage))
             fprintf(stderr, "[hotd4sp] the player takes no damage (LINDBERGH_GOD)\n");
     }
+#ifdef __ANDROID__
+    {
+        const char *v = getenv("LINDBERGH_SPLASH");
+        if (!(v && *v == '1') && guest_override_va("CPlayerEffect::Draw", PLAYER_EFFECT_DRAW, h_no_splash))
+            fprintf(stderr, "[hotd4sp] the shot splash is left out in the headset\n");
+    }
+#endif
     if (guest_override("_Z14GetAdjstGunPosPhS_ttP18GunAdjustValueTypei", h_gun_pos))
         fprintf(stderr, "[hotd4sp] aim: the gun is where the pointer is\n");
 
