@@ -6,7 +6,7 @@ executables to native code: on macOS, and standalone in VR on Meta Quest.**
 Each game's code is lifted to C by
 [**lindberghrecomp**](https://github.com/sp00nznet/lindberghrecomp) and built
 against its runtime, which stands in for the cabinet: its GL, sound, gun and
-board. Nothing is emulated. Three games so far; more will follow, each in its
+board. Nothing is emulated. Four games so far; more will follow, each in its
 own folder under `games/`.
 
 > **No game data here.** No executables, no discs, no filesystem images, no
@@ -39,25 +39,27 @@ home of sp00nznet's recomp projects.
 | --- | --- | --- |
 | [Ghost Squad Evolution](docs/ghostsquadevolution/QUEST.md) (2007) | plays, 60 fps, 16:9 | plays, released |
 | [The House of the Dead 4](docs/hotd4/QUEST.md) (2005) | plays, 60 fps, 16:9 | plays, released |
-| [Let's Go Jungle!](docs/lgj/QUEST.md) (2006) | plays, 60 fps, 16:9 | plays, build it yourself |
+| [Let's Go Jungle!](docs/lgj/QUEST.md) (2006) | plays, 60 fps, 16:9 | plays, released |
+| [The House of the Dead 4 Special](docs/hotd4sp/QUEST.md) (2006) | plays, 60 fps, 16:9 | plays, released |
 
-On the Mac all three run in 16:9. **Ghost Squad Evolution** draws its 3D wider
+On the Mac all four run in 16:9. **Ghost Squad Evolution** draws its 3D wider
 than the cabinet's 4:3 and moves its HUD to the screen's edges; menus stay
 4:3 (`LINDBERGH_WIDE=0` brings back the arcade picture). **The House of the
-Dead 4** and **Let's Go Jungle!** run in their boards' own 1360x768
-widescreen mode.
+Dead 4**, **Let's Go Jungle!** and **The House of the Dead 4 Special** run in
+their boards' own 1360x768 widescreen mode.
 
 | Ghost Squad Evolution | The House of the Dead 4 |
 | --- | --- |
 | ![Ghost Squad Evolution on macOS: mission 1, the villa](docs/ghostsquadevolution/mac-mansion.jpg) | ![The House of the Dead 4 on macOS: the first room](docs/hotd4/mac-zombies.jpg) |
 | ![Ghost Squad Evolution on macOS: the squad breaching a door](docs/ghostsquadevolution/mac-breach.jpg) | ![The House of the Dead 4 on macOS: a dark corridor](docs/hotd4/mac-corridor.jpg) |
 
-| Let's Go Jungle! | |
+| Let's Go Jungle! | The House of the Dead 4 Special |
 | --- | --- |
-| ![Let's Go Jungle! on macOS: the jeep in the jungle](docs/lgj/mac-jeep.jpg) | ![Let's Go Jungle! on macOS: giant spiders on the path](docs/lgj/mac-spiders.jpg) |
+| ![Let's Go Jungle! on macOS: the jeep in the jungle](docs/lgj/mac-jeep.jpg) | ![The House of the Dead 4 Special on macOS: zombies in the street](docs/hotd4sp/mac-street.jpg) |
+| ![Let's Go Jungle! on macOS: giant spiders on the path](docs/lgj/mac-spiders.jpg) | ![The House of the Dead 4 Special on macOS: a crowd in a passage](docs/hotd4sp/mac-crowd.jpg) |
 
-*On an M-series Mac: Ghost Squad Evolution at 1920x1080, The House of the
-Dead 4 and Let's Go Jungle! at 1360x768.*
+*On an M-series Mac: Ghost Squad Evolution at 1920x1080, the others at
+1360x768.*
 
 ## Meta Quest
 
@@ -68,8 +70,7 @@ front of you.
 1. Download the game's APK from the
    [releases page](https://github.com/lialan/lindbergh-recomp-ports/releases)
    and install it with [SideQuest](https://sidequestvr.com) or
-   `adb install -r <apk>`. (Let's Go Jungle!'s APK is not in a release yet:
-   [build it](docs/lgj/QUEST.md).)
+   `adb install -r <apk>`.
 2. Copy your game to the headset's shared storage:
    - **Ghost Squad Evolution:** the whole `vsg_l` folder to
      `/sdcard/GhostSquadEvolution/vsg_l`
@@ -80,6 +81,9 @@ front of you.
    - **Let's Go Jungle!:** `lgj_final` and its `data`, `shader` and
      `extraShader` folders to `/sdcard/LetsGoJungle`
      (`adb push lgj_final data shader extraShader /sdcard/LetsGoJungle/`).
+   - **The House of the Dead 4 Special:** its `elf` and `fs` folders to
+     `/sdcard/HouseOfTheDead4Special`
+     (`adb push elf fs /sdcard/HouseOfTheDead4Special/`).
 3. Start the game from *Unknown Sources*. The first time it opens the *All
    files access* screen: allow it, then start the app again.
 
@@ -90,12 +94,14 @@ game, settings and saves.
 
 **Playing:** the trigger fires, the grip reloads (or fire pointing off the
 screen), a thumbstick click is Start, and coins are automatic. In Ghost Squad,
-A/X is the action button and B/Y changes fire mode. The left controller's
+A/X is the action button and B/Y changes fire mode; in The House of the Dead
+4 Special, shake the gun to reload. The left controller's
 menu button opens the settings panel: sights, laser, gun model, hand, screen
 distance, resolution, display rate, recentring, and Reset game. More in each
 game's doc: [Ghost Squad Evolution](docs/ghostsquadevolution/QUEST.md),
 [The House of the Dead 4](docs/hotd4/QUEST.md),
-[Let's Go Jungle!](docs/lgj/QUEST.md).
+[Let's Go Jungle!](docs/lgj/QUEST.md),
+[The House of the Dead 4 Special](docs/hotd4sp/QUEST.md).
 
 ## macOS
 
@@ -114,6 +120,9 @@ cd lindbergh-recomp-ports
 
 ./scripts/build-macos.sh lgj "/path/to/Let's Go Jungle"
 ./scripts/run-macos.sh   lgj "/path/to/Let's Go Jungle"
+
+./scripts/build-macos.sh hotd4sp /path/to/hotd4sp     # the folder holding elf/ and fs/
+./scripts/run-macos.sh   hotd4sp /path/to/hotd4sp
 ```
 
 `build-macos.sh` lifts the game into the gitignored `games/<game>/generated/`
@@ -123,7 +132,7 @@ changed is rebuilt. The games start muted.
 | | |
 | --- | --- |
 | Aim / fire / reload | mouse / left button / right button (or move the pointer off the window) |
-| Coin / Start | `5` / `1` (player two: `6` / `2`); The House of the Dead 4 takes two credits |
+| Coin / Start | `5` / `1` (player two: `6` / `2`); The House of the Dead 4 games take two credits |
 | Action button, fire mode (Ghost Squad) | `Space`, `F` |
 | Mute | `M` |
 | Test / Service | `T` / `S` |
@@ -143,8 +152,8 @@ quest/build.sh <game>              # -> quest/<App>.apk, no game data
 quest/install.sh <game> <folder>   # install over adb and copy the game to the headset
 ```
 
-CI builds the released games' APKs (Ghost Squad Evolution, The House of the
-Dead 4) on every push to `main`; a `v*` tag publishes them as one release. The lifted code CI builds from lives in a private repository.
+CI builds all four games' APKs on every push to `main`; a `v*` tag publishes
+them as one release. The lifted code CI builds from lives in a private repository.
 
 ## Layout
 
@@ -173,7 +182,7 @@ Upstream's Windows build and its notes are in
 
 The host and the recompilation toolchain are original work, MIT-licensed.
 **No game data, no disc images, no keys, and no circumvention of anything.**
-*Ghost Squad Evolution*, *The House of the Dead 4* and *Let's Go Jungle!* are
-© Sega; this is an
+*Ghost Squad Evolution*, *The House of the Dead 4*, *The House of the Dead 4
+Special* and *Let's Go Jungle!* are © Sega; this is an
 independent, non-commercial preservation project. To help, read
 [CONTRIBUTING.md](CONTRIBUTING.md) first.

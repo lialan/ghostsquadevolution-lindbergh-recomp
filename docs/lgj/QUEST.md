@@ -7,8 +7,9 @@ with a tracked controller. It is the Ghost Squad Evolution VR port's runtime
 
 **Status:** plays on a Quest 3 from attract mode through the first stage at
 60 fps: the jungle in 3D around you, the HUD on a screen in front of you.
-Checked from captured eye images of muted, scripted runs; not yet played with
-real controllers. Not in a release yet: build it yourself.
+Released from v0.2.5: `LetsGoJungleVR-<version>-quest3.apk` on the
+[releases page](https://github.com/lialan/lindbergh-recomp-ports/releases);
+install it, then copy the game as below (`/sdcard/LetsGoJungle`).
 
 ## Build
 

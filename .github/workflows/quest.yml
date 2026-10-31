@@ -27,6 +27,10 @@ jobs:
             key: GSE            # its signing key: secrets <key>_KEYSTORE_B64 / _PASSWORD
           - game: hotd4
             key: HOTD4
+          - game: lgj
+            key: LGJ
+          - game: hotd4sp
+            key: HOTD4SP
     env:
       NDK_VERSION: 27.3.13750724
       DEPS: ${{ github.workspace }}/../deps

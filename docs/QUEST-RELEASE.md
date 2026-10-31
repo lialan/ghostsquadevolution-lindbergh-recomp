@@ -4,6 +4,8 @@ Sega Lindbergh arcade games in VR, for Meta Quest 3, Quest 3S and Quest Pro:
 | --- | --- |
 | Ghost Squad Evolution | `GhostSquadEvolutionVR-<version>-quest3.apk` |
 | The House of the Dead 4 | `HouseOfTheDead4VR-<version>-quest3.apk` |
+| Let's Go Jungle! | `LetsGoJungleVR-<version>-quest3.apk` |
+| The House of the Dead 4 Special | `HouseOfTheDead4SpecialVR-<version>-quest3.apk` |
 
 **The games themselves are not included.** Each APK holds a port: the game's
 code recompiled to run natively on the headset, the VR host, and its
@@ -24,11 +26,19 @@ libraries. You need your own copy of the arcade game.
      into `HouseOfTheDead4`, so the executable is at
      `/sdcard/HouseOfTheDead4/elf/hod4M.elf`
      (`adb push elf fs drv /sdcard/HouseOfTheDead4/`).
+   - **Let's Go Jungle!:** `lgj_final` and its `data`, `shader` and
+     `extraShader` folders into `LetsGoJungle`
+     (`adb push lgj_final data shader extraShader /sdcard/LetsGoJungle/`).
+   - **The House of the Dead 4 Special:** the game's `elf` and `fs` folders
+     into `HouseOfTheDead4Special`, so the executable is at
+     `/sdcard/HouseOfTheDead4Special/elf/hod4M.elf`
+     (`adb push elf fs /sdcard/HouseOfTheDead4Special/`).
 3. Start the game from *Unknown Sources*. The first time it opens the system
    screen to allow access to all files: allow it, then start the app again.
    (Or grant it from a computer:
    `adb shell appops set --uid <package> MANAGE_EXTERNAL_STORAGE allow`, with
-   `org.lindbergh.gse.vr` or `org.lindbergh.hotd4.vr`.)
+   `org.lindbergh.gse.vr`, `org.lindbergh.hotd4.vr`, `org.lindbergh.lgj.vr`
+   or `org.lindbergh.hotd4sp.vr`.)
 
 Each port only runs the exact game version it was built from:
 
@@ -36,6 +46,8 @@ Each port only runs the exact game version it was built from:
 | --- | --- | --- |
 | Ghost Squad Evolution | `vsg` | `2966eed7254b485bd086215df226240ae97464132714a1a1504c52ba2a9e4815` |
 | The House of the Dead 4 | `elf/hod4M.elf` | `72fdd45830acd9317ec1e4f97de35a270c94746068fdaf827381c91bb47aa296` |
+| Let's Go Jungle! | `lgj_final` | `3edbf6a4c5c97cc37e0ff353cacd265360da42c3b5efa4d1370dfa5e63f58ec9` |
+| The House of the Dead 4 Special | `elf/hod4M.elf` | `b84c70d9940d5f5fa7d287fd8c6b050444fdcbc2fd742d3afc74a1099bbec5fe` |
 
 If the game is missing or a different version, the app closes and explains
 why in `Android/data/<package>/files/HOW-TO-ADD-THE-GAME.txt`.
@@ -46,9 +58,12 @@ and saved cabinet data.
 ## Play
 
 Trigger fires, grip reloads (or pull the trigger pointing off the screen), a
-thumbstick click is Start, and coins are automatic. The left controller's
+thumbstick click is Start, and coins are automatic; in The House of the Dead 4
+Special, shake the gun to reload. The left controller's
 menu button opens the settings panel: sights, laser, gun model, gun hand,
 resolution, display rate, recentring, and Reset game.
 
 More: [Ghost Squad Evolution](https://github.com/lialan/lindbergh-recomp-ports/blob/main/docs/ghostsquadevolution/QUEST.md),
-[The House of the Dead 4](https://github.com/lialan/lindbergh-recomp-ports/blob/main/docs/hotd4/QUEST.md).
+[The House of the Dead 4](https://github.com/lialan/lindbergh-recomp-ports/blob/main/docs/hotd4/QUEST.md),
+[Let's Go Jungle!](https://github.com/lialan/lindbergh-recomp-ports/blob/main/docs/lgj/QUEST.md),
+[The House of the Dead 4 Special](https://github.com/lialan/lindbergh-recomp-ports/blob/main/docs/hotd4sp/QUEST.md).
