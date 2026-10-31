@@ -83,15 +83,16 @@ static void h_get_target(CPU *c)
     uint32_t ok = c->eax;
     float go[3], gd[3];
     uint32_t pos = A32(3), dir = A32(4), cdir = A32(7);
-    int have = stereo_gun_ray(go, gd);
-    {   /* LINDBERGH_TEST_RAY=ox,oy,oz,dx,dy,dz: a fixed ray, camera space (testing off the headset) */
+    unsigned player = rd8(self + 0x34);      /* each player fires from their own gun (dual wielding) */
+    int have = player < 2 && stereo_gun_ray((int)player, go, gd);
+    if (player == 0) {   /* LINDBERGH_TEST_RAY=ox,oy,oz,dx,dy,dz: a fixed ray, camera space (testing off the headset) */
         const char *t = getenv("LINDBERGH_TEST_RAY");
         if (t && sscanf(t, "%f,%f,%f,%f,%f,%f", &go[0], &go[1], &go[2], &gd[0], &gd[1], &gd[2]) == 6) have = 1;
     }
     static int dbg = -1;
     if (dbg < 0) dbg = getenv("LINDBERGH_AIM_LOG") != NULL;
     if (dbg) { static unsigned k; if (++k % 120 == 1) fprintf(stderr, "[hotd4sp] GetTarget: player %u, ok %u, ray %d\n", rd8(self + 0x34), ok, have); }
-    if (!ok || !pos || !dir || rd8(self + 0x34) != 0 || !have) { c->eax = ok; return; }
+    if (!ok || !pos || !dir || !have) { c->eax = ok; return; }
     if (!g_shot_buf) g_shot_buf = H2G(guest_alloc(64 + 32, 16));
     uint32_t m = g_shot_buf, vin = m + 64, vout = m + 80;
     /* the camera's turn into the world, as GetTarget makes it */
