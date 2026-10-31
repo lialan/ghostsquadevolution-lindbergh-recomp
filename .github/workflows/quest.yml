@@ -46,7 +46,7 @@ jobs:
           repository: lialan/gse-recomp-generated
           ssh-key: ${{ secrets.GSE_GENERATED_KEY }}
           path: lifted
-      - run: cp lifted/${{ matrix.game }}/* games/${{ matrix.game }}/generated/ && rm -rf lifted
+      - run: mkdir -p games/${{ matrix.game }}/generated && cp lifted/${{ matrix.game }}/* games/${{ matrix.game }}/generated/ && rm -rf lifted
 
       - uses: actions/setup-java@v4
         with:
