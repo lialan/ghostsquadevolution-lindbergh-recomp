@@ -26,7 +26,9 @@ libraries. You need your own copy of the arcade game.
   scenes start with less stutter after the first run; gl4es builds shader
   text faster; The House of the Dead 4, Let's Go Jungle! and Ghost Squad
   Evolution are re-translated with the current lifter (faster game code);
-  viewport and scissor reads no longer wait for the GL thread.
+  viewport and scissor reads no longer wait for the GL thread, nor do
+  client-array batches or glXMakeCurrent (in The House of the Dead 4, from 52
+  waits a frame to none); queueing GL calls is cheaper.
 - The settings panel's last row (*Close*) is no longer cut off.
 - Let's Go Jungle! is still experimental (a bit buggy), as in v0.2.5.
 - Installing over v0.2.5 keeps your settings (same signing keys). As before,
